@@ -1,4 +1,4 @@
-# first_flutter_project
+# Simple Domain
 
 A new Flutter project.
 
