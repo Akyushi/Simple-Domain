@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'sign_up.dart';
+import '../services/auth_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -15,6 +17,50 @@ class _LoginPageState extends State<LoginPage> {
   bool _showPassword = false;
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false; // To prevent multiple submissions
+  final AuthService _authService = AuthService();
+
+  void _login() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() {
+        _isLoading = true;
+      });
+
+      try {
+        final user = await _authService.loginWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+        );
+
+        if (user != null) {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      } on FirebaseAuthException catch (e) {
+        String message;
+        switch (e.code) {
+          case 'user-not-found':
+          case 'wrong-password':
+            message = 'Invalid email or password';
+            break;
+          case 'user-disabled':
+            message = 'This account has been disabled';
+            break;
+          default:
+            message = 'Login failed. Please try again.';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('An unexpected error occurred')),
+        );
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -107,17 +153,10 @@ class _LoginPageState extends State<LoginPage> {
                     backgroundColor: Colors.blue,
                     minimumSize: const Size(double.infinity, 50),
                   ),
-                  onPressed: _isLoading ? null : () async {
-                    if (_formKey.currentState?.validate() ?? false) {
-                      setState(() => _isLoading = true);
-                      await Future.delayed(const Duration(seconds: 1)); // Simulate API call
-                      setState(() => _isLoading = false);
-                      // Handle actual login
-                    }
-                  },
+                  onPressed: _isLoading ? null : _login,
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('LOGIN', style: TextStyle(fontWeight: FontWeight.bold)),
+                      : const Text('Login'),
                 ),
                 const SizedBox(height: 16),
                 TextButton(

@@ -30,15 +30,18 @@ class _ShopPageState extends State<ShopPage> {
     }).toList();
   }
 
-  void toggleFavorite(int index) {
-    setState(() {
-      products[index]['isFavorite'] = !products[index]['isFavorite'];
-      if (products[index]['isFavorite']) {
-        SharedData.wishlist.add(products[index]); // Add to shared wishlist
-      } else {
-        SharedData.wishlist.removeWhere((item) => item['name'] == products[index]['name']); // Remove from shared wishlist
-      }
-    });
+  void toggleFavorite(String productName) {
+    final originalIndex = products.indexWhere((product) => product['name'] == productName);
+    if (originalIndex != -1) {
+      setState(() {
+        products[originalIndex]['isFavorite'] = !products[originalIndex]['isFavorite'];
+        if (products[originalIndex]['isFavorite']) {
+          SharedData.wishlist.add(products[originalIndex]); // Add to shared wishlist
+        } else {
+          SharedData.wishlist.removeWhere((item) => item['name'] == products[originalIndex]['name']); // Remove from shared wishlist
+        }
+      });
+    }
   }
 
   @override
@@ -68,25 +71,20 @@ class _ShopPageState extends State<ShopPage> {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: selectedCategory == 'All' ? null : selectedCategory,
-                hint: const Text('Select a category'),
-                items: ['All', 'Hardware', 'Accessories', 'Books', 'Kitchen', 'Sports']
-                    .map((category) => DropdownMenuItem(
+              Column(
+                children: ['All', 'Hardware', 'Accessories', 'Books', 'Kitchen', 'Sports']
+                    .map((category) => RadioListTile<String>(
+                          title: Text(category),
                           value: category,
-                          child: Text(category),
+                          groupValue: selectedCategory,
+                          onChanged: (value) {
+                            setState(() {
+                              selectedCategory = value!;
+                            });
+                            Navigator.pop(context);
+                          },
                         ))
                     .toList(),
-                onChanged: (value) {
-                  setState(() {
-                    selectedCategory = value!;
-                  });
-                  Navigator.pop(context);
-                },
-                decoration: const InputDecoration(
-                  labelText: 'Category',
-                  border: OutlineInputBorder(),
-                ),
               ),
             ],
           ),
@@ -204,7 +202,7 @@ class _ShopPageState extends State<ShopPage> {
                           ),
                           const Spacer(),
                           GestureDetector(
-                            onTap: () => toggleFavorite(index),
+                            onTap: () => toggleFavorite(product['name']),
                             child: Icon(
                               product['isFavorite']
                                   ? Icons.favorite

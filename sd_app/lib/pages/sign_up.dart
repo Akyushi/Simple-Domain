@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'login.dart';
+import '../services/auth_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -17,6 +19,63 @@ class _SignUpPageState extends State<SignUpPage> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
+  final AuthService _authService = AuthService();
+
+  void _signUp() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() {
+        _isLoading = true;
+      });
+
+      if (_passwordController.text != _confirmPasswordController.text) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Passwords do not match')),
+        );
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      try {
+        final user = await _authService.signUpWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+          name: _nameController.text.trim(),
+        );
+
+        if (user != null) {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      } on FirebaseAuthException catch (e) {
+        String message;
+        switch (e.code) {
+          case 'email-already-in-use':
+            message = 'This email is already in use';
+            break;
+          case 'weak-password':
+            message = 'The password is too weak';
+            break;
+          case 'invalid-email':
+            message = 'The email address is invalid';
+            break;
+          default:
+            message = 'Sign-up failed. Please try again.';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('An unexpected error occurred')),
+        );
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,8 +93,8 @@ class _SignUpPageState extends State<SignUpPage> {
           physics: const ClampingScrollPhysics(),
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              minHeight: MediaQuery.of(context).size.height - 
-                        MediaQuery.of(context).padding.vertical,
+              minHeight: MediaQuery.of(context).size.height -
+                  MediaQuery.of(context).padding.vertical,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -44,7 +103,8 @@ class _SignUpPageState extends State<SignUpPage> {
                 SvgPicture.asset(
                   'assets/icons/shopping-bag.svg', // Ensure the file path is correct
                   height: 80,
-                  placeholderBuilder: (context) => const CircularProgressIndicator(),
+                  placeholderBuilder: (context) =>
+                      const CircularProgressIndicator(),
                 ),
                 const SizedBox(height: 32),
                 const Text(
@@ -65,7 +125,7 @@ class _SignUpPageState extends State<SignUpPage> {
                             prefixIcon: Icon(Icons.person),
                           ),
                           autofillHints: const [AutofillHints.name],
-                          validator: (value) => 
+                          validator: (value) =>
                               value?.isNotEmpty ?? false ? null : 'Enter your name',
                         ),
                         const SizedBox(height: 16),
@@ -78,7 +138,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           ),
                           keyboardType: TextInputType.emailAddress,
                           autofillHints: const [AutofillHints.email],
-                          validator: (value) => 
+                          validator: (value) =>
                               value?.contains('@') ?? false ? null : 'Enter valid email',
                         ),
                         const SizedBox(height: 16),
@@ -89,15 +149,16 @@ class _SignUpPageState extends State<SignUpPage> {
                             border: const OutlineInputBorder(),
                             prefixIcon: const Icon(Icons.lock),
                             suffixIcon: IconButton(
-                              icon: Icon(_showPassword 
-                                  ? Icons.visibility 
+                              icon: Icon(_showPassword
+                                  ? Icons.visibility
                                   : Icons.visibility_off),
-                              onPressed: () => setState(() => _showPassword = !_showPassword),
+                              onPressed: () =>
+                                  setState(() => _showPassword = !_showPassword),
                             ),
                           ),
                           obscureText: !_showPassword,
                           autofillHints: const [AutofillHints.newPassword],
-                          validator: (value) => 
+                          validator: (value) =>
                               (value?.length ?? 0) > 5 ? null : 'Minimum 6 characters',
                         ),
                         const SizedBox(height: 16),
@@ -110,8 +171,10 @@ class _SignUpPageState extends State<SignUpPage> {
                           ),
                           obscureText: !_showPassword,
                           autofillHints: const [AutofillHints.newPassword],
-                          validator: (value) => 
-                              value == _passwordController.text ? null : 'Passwords don\'t match',
+                          validator: (value) =>
+                              value == _passwordController.text
+                                  ? null
+                                  : 'Passwords don\'t match',
                         ),
                       ],
                     ),
@@ -123,7 +186,8 @@ class _SignUpPageState extends State<SignUpPage> {
                   children: [
                     Checkbox(
                       value: _showPassword,
-                      onChanged: (value) => setState(() => _showPassword = value ?? false),
+                      onChanged: (value) =>
+                          setState(() => _showPassword = value ?? false),
                     ),
                     const Text('Show Password'),
                   ],
@@ -134,14 +198,7 @@ class _SignUpPageState extends State<SignUpPage> {
                     backgroundColor: Colors.blue,
                     minimumSize: const Size(double.infinity, 50),
                   ),
-                  onPressed: _isLoading ? null : () async {
-                    if (_formKey.currentState?.validate() ?? false) {
-                      setState(() => _isLoading = true);
-                      await Future.delayed(const Duration(seconds: 1));
-                      setState(() => _isLoading = false);
-                      // Handle sign up
-                    }
-                  },
+                  onPressed: _isLoading ? null : _signUp,
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : const Text('SIGN UP', style: TextStyle(fontWeight: FontWeight.bold)),
