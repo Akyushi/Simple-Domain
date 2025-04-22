@@ -15,7 +15,7 @@ Installation
 1.1. Install Flutter SDK: [Installation Guide](https://flutter.dev/docs/get-started/install)
 1.2. Clone the repository:
   
-  git clone https://github.com/username/myapp.git](https://github.com/username/myapp.git
+  git clone https://github.com/Akyushi/Simple-Domain
   
 1.3. Navigate to the project folder and install dependencies:
   
