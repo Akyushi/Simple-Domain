@@ -42,7 +42,15 @@ class SearchBar extends StatelessWidget {
           ),
           prefixIcon: IconButton(
             icon: SvgPicture.asset('assets/icons/search.svg'),
-            onPressed: () {},
+            onPressed: () {
+              if (searchController.text.isNotEmpty) {
+                Navigator.pushNamed(
+                  context,
+                  '/search',
+                  arguments: searchController.text,
+                );
+              }
+            },
           ),
           suffixIcon: SizedBox(
             width: 80,

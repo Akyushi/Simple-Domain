@@ -63,6 +63,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '127707562196',
     projectId: 'simple-domain-app',
     storageBucket: 'simple-domain-app.firebasestorage.app',
+    androidClientId: '127707562196-9lnebplmieq9ev32g5gdo7tgs606ai3t.apps.googleusercontent.com',
+    iosClientId: '127707562196-vpr5savullrhf813atc555pvm5rimakn.apps.googleusercontent.com',
     iosBundleId: 'com.example.firstFlutterProject',
   );
 
@@ -72,6 +74,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '127707562196',
     projectId: 'simple-domain-app',
     storageBucket: 'simple-domain-app.firebasestorage.app',
+    androidClientId: '127707562196-9lnebplmieq9ev32g5gdo7tgs606ai3t.apps.googleusercontent.com',
+    iosClientId: '127707562196-vpr5savullrhf813atc555pvm5rimakn.apps.googleusercontent.com',
     iosBundleId: 'com.example.firstFlutterProject',
   );
 

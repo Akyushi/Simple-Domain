@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'sign_up.dart';
 import '../services/auth_service.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../widgets/login/login_form.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -16,51 +18,10 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _passwordController = TextEditingController();
   bool _showPassword = false;
   final _formKey = GlobalKey<FormState>();
-  bool _isLoading = false; // To prevent multiple submissions
+  bool _isLoading = false;
+
   final AuthService _authService = AuthService();
-
-  void _login() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-      });
-
-      try {
-        final user = await _authService.loginWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
-
-        if (user != null) {
-          Navigator.pushReplacementNamed(context, '/home');
-        }
-      } on FirebaseAuthException catch (e) {
-        String message;
-        switch (e.code) {
-          case 'user-not-found':
-          case 'wrong-password':
-            message = 'Invalid email or password';
-            break;
-          case 'user-disabled':
-            message = 'This account has been disabled';
-            break;
-          default:
-            message = 'Login failed. Please try again.';
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('An unexpected error occurred')),
-        );
-      }
-
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   @override
   Widget build(BuildContext context) {
@@ -75,20 +36,21 @@ class _LoginPageState extends State<LoginPage> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
-          physics: const ClampingScrollPhysics(), // Smoother scrolling
+          physics: const ClampingScrollPhysics(),
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              minHeight: MediaQuery.of(context).size.height - 
-                        MediaQuery.of(context).padding.vertical,
+              minHeight: MediaQuery.of(context).size.height -
+                  MediaQuery.of(context).padding.vertical,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 20),
                 SvgPicture.asset(
-                  'assets/icons/shopping-bag.svg', // Ensure the file path is correct
+                  'assets/icons/logo.svg',
                   height: 80,
-                  placeholderBuilder: (context) => const CircularProgressIndicator(),
+                  placeholderBuilder: (context) =>
+                      const CircularProgressIndicator(),
                 ),
                 const SizedBox(height: 32),
                 const Text(
@@ -96,55 +58,36 @@ class _LoginPageState extends State<LoginPage> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 24),
-                Form(
-                  key: _formKey,
-                  child: AutofillGroup(
-                    child: Column(
-                      children: [
-                        TextFormField(
-                          controller: _emailController,
-                          decoration: const InputDecoration(
-                            labelText: 'Email',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.email),
-                          ),
-                          keyboardType: TextInputType.emailAddress,
-                          autofillHints: const [AutofillHints.email],
-                          validator: (value) => 
-                              value?.contains('@') ?? false ? null : 'Enter valid email',
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _passwordController,
-                          decoration: InputDecoration(
-                            labelText: 'Password',
-                            border: const OutlineInputBorder(),
-                            prefixIcon: const Icon(Icons.lock),
-                            suffixIcon: IconButton(
-                              icon: Icon(_showPassword 
-                                  ? Icons.visibility 
-                                  : Icons.visibility_off),
-                              onPressed: () => setState(() => _showPassword = !_showPassword),
-                            ),
-                          ),
-                          obscureText: !_showPassword,
-                          autofillHints: const [AutofillHints.password],
-                          validator: (value) => 
-                              (value?.length ?? 0) > 5 ? null : 'Minimum 6 characters',
-                        ),
-                      ],
-                    ),
-                  ),
+                LoginForm(
+                  formKey: _formKey,
+                  emailController: _emailController,
+                  passwordController: _passwordController,
+                  showPassword: _showPassword,
+                  onShowPasswordChanged: (value) => setState(() => _showPassword = value ?? false),
                 ),
                 const SizedBox(height: 8),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Checkbox(
-                      value: _showPassword,
-                      onChanged: (value) => setState(() => _showPassword = value ?? false),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _showPassword,
+                          onChanged: (value) =>
+                              setState(() => _showPassword = value ?? false),
+                        ),
+                        const Text('Show Password'),
+                      ],
                     ),
-                    const Text('Show Password'),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/forgot_password');
+                      },
+                      child: const Text(
+                        'Forgot Password?',
+                        style: TextStyle(color: Colors.blue),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -153,10 +96,8 @@ class _LoginPageState extends State<LoginPage> {
                     backgroundColor: Colors.blue,
                     minimumSize: const Size(double.infinity, 50),
                   ),
-                  onPressed: _isLoading ? null : _login,
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('Login'),
+                  onPressed: _isLoading ? null : _handleLogin,
+                  child: const Text('Login'),
                 ),
                 const SizedBox(height: 16),
                 TextButton(
@@ -172,8 +113,8 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.g_mobiledata, size: 24),
-                  label: const Text('Sign in with Google'),
-                  onPressed: () {},
+                  label: const Text('Log in with Google'), // Updated label to reflect login
+                  onPressed: _handleGoogleSignIn, // Use the existing method for Google login
                 ),
                 const SizedBox(height: 32),
                 const Text(
@@ -186,6 +127,143 @@ class _LoginPageState extends State<LoginPage> {
         ),
       ),
     );
+  }
+
+  void _showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 20),
+            Text("Logging in..."),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showWelcomeDialog(String email) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text("Welcome!"),
+        content: Text("Hello, $email 👋\nWe're glad to have you back."),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.pushReplacementNamed(context, '/');
+            },
+            child: const Text("Continue"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleLogin() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+    _showLoadingDialog();
+
+    try {
+      final email = _emailController.text.trim();
+      final password = _passwordController.text.trim();
+
+      await _authService.login(email, password);
+
+      if (!mounted) return; // Check if the widget is still mounted
+      Navigator.of(context).pop(); // Close loading dialog
+      _showWelcomeDialog(email);
+    } catch (e) {
+      if (!mounted) return; // Check if the widget is still mounted
+      Navigator.of(context).pop(); // Close loading dialog on error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    try {
+      final isGoogleUserLoggedIn = await _isGoogleUserLoggedIn(); // Check Google login
+      if (!isGoogleUserLoggedIn) {
+        if (!mounted) return; // Check if the widget is still mounted
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Google Sign-In canceled."),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Authenticate with Firebase
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        // User canceled the sign-in
+        return;
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      if (googleAuth.accessToken == null || googleAuth.idToken == null) {
+        throw FirebaseAuthException(
+          code: 'invalid-credential',
+          message: 'The supplied auth credential is invalid or expired.',
+        );
+      }
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+
+      if (!mounted) return; // Check if the widget is still mounted
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Signed in as ${userCredential.user?.email}"),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.pushReplacementNamed(context, '/');
+    } catch (e) {
+      if (!mounted) return; // Check if the widget is still mounted
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Google Sign-In failed: $e"),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  Future<bool> _isGoogleUserLoggedIn() async {
+    try {
+      await _googleSignIn.signOut(); // Sign out to allow account selection
+      final googleUser = await _googleSignIn.signIn(); // Prompt user to select an account
+      return googleUser != null;
+    } catch (e) {
+      print("Google sign-in error: $e");
+      return false;
+    }
   }
 
   @override

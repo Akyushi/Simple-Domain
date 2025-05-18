@@ -8,4 +8,20 @@ class UserModel {
     required this.name,
     required this.email,
   });
+
+  factory UserModel.fromMap(Map<String, dynamic> data) {
+    return UserModel(
+      id: data['uid'] ?? '',
+      name: data['name'] ?? '',
+      email: data['email'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'uid': id,
+      'name': name,
+      'email': email,
+    };
+  }
 }

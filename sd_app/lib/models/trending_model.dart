@@ -42,7 +42,7 @@ class TrendingModel {
       TrendingModel(
         name: 'Trending 3',
         imagePath: 'assets/images/shoes.png',
-        description: 'Description of trending 3',
+        description: '₱Description of trending 3', // Updated to peso
         boxColor: Colors.green,
         isSelected: false,
       ),

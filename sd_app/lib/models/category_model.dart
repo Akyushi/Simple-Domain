@@ -26,7 +26,7 @@ class CategoryModel {
     ));
 
     categories.add(CategoryModel(
-      name: 'Home & Kitchen',
+      name: 'Food',
       iconPath: 'assets/icons/kitchen.svg',
       boxColor: Color(0xffE8E4FC),
     ));
@@ -38,8 +38,8 @@ class CategoryModel {
     ));
 
     categories.add(CategoryModel(
-      name: 'Sports',
-      iconPath: 'assets/icons/sports.svg',
+      name: 'Others',
+      iconPath: 'assets/icons/others.svg',
       boxColor: Color(0xffE8FCE8),
     ));
 
