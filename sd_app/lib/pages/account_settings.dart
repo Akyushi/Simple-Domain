@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'gcash_simulation_page.dart';
 
 class AccountSettingsPage extends StatefulWidget {
   const AccountSettingsPage({super.key});
@@ -76,15 +77,26 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Account Information'),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 1,
+        title: const Text('Account Settings'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
+      body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.account_balance_wallet),
+                label: const Text('GCash Simulation'),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const GCashSimulationPage()),
+                  );
+                },
+              ),
+            ),
+          ),
           ListTile(
             leading: _isUploadingAvatar
                 ? const CircleAvatar(
