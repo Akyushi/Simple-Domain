@@ -9,6 +9,7 @@ import 'admin_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'notification_page.dart';
+import 'admin_login.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -62,7 +63,7 @@ class _HomePageState extends State<HomePage> {
     _lastTapTime = now;
     if (_secretTapCount == 9) {
       _secretTapCount = 0;
-      Navigator.pushNamed(context, '/admin');
+      Navigator.pushNamed(context, '/admin-login');
     }
   }
 

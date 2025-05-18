@@ -18,6 +18,7 @@ import 'pages/password_reset.dart'; // Import PasswordResetPage
 import 'pages/admin_page.dart';
 import 'pages/order_status.dart';
 import 'pages/seller_store.dart';
+import 'pages/admin_login.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
@@ -78,6 +79,7 @@ class MyApp extends StatelessWidget {
           final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
           return SellerStorePage(sellerId: args?['sellerId'] ?? '');
         },
+        '/admin-login': (context) => const AdminLoginPage(),
       },
     );
   }
