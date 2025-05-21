@@ -325,196 +325,202 @@ class _SearchPageState extends State<SearchPage> {
                           style: const TextStyle(fontSize: 16),
                         ),
                       )
-                    : ListView.builder(
-                        itemCount: (_selectedCategory == 'All'
-                            ? _searchResults.length
-                            : _searchResults.where((item) => item['category'] == _selectedCategory).length) + 1,
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        itemBuilder: (context, index) {
-                          // Show seller card at the top if a seller matches
-                          if (index == 0) {
-                            // Find the first unique seller that matches the search
-                            final sellerSet = <String>{};
-                            Map<String, dynamic>? sellerInfo;
-                            final filteredResults = _selectedCategory == 'All'
-                                ? _searchResults
-                                : _searchResults.where((item) => item['category'] == _selectedCategory).toList();
-                            for (final product in filteredResults) {
-                              final sellerId = product['sellerId'];
-                              final sellerName = product['sellerName'] ?? '';
-                              if (sellerId != null && sellerName.isNotEmpty && !sellerSet.contains(sellerId)) {
-                                sellerSet.add(sellerId);
-                                // Only show if the seller name matches the search
-                                if (sellerName.toLowerCase().contains(_searchController.text.toLowerCase())) {
-                                  sellerInfo = {
-                                    'sellerId': sellerId,
-                                    'sellerName': product['sellerName'],
-                                    'sellerAvatar': product['sellerAvatar'],
-                                  };
-                                  break;
+                    : RefreshIndicator(
+                        onRefresh: () async {
+                          await Future.delayed(const Duration(milliseconds: 700));
+                          await _performSearch(_searchController.text);
+                        },
+                        child: ListView.builder(
+                          itemCount: (_selectedCategory == 'All'
+                              ? _searchResults.length
+                              : _searchResults.where((item) => item['category'] == _selectedCategory).length) + 1,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemBuilder: (context, index) {
+                            // Show seller card at the top if a seller matches
+                            if (index == 0) {
+                              // Find the first unique seller that matches the search
+                              final sellerSet = <String>{};
+                              Map<String, dynamic>? sellerInfo;
+                              final filteredResults = _selectedCategory == 'All'
+                                  ? _searchResults
+                                  : _searchResults.where((item) => item['category'] == _selectedCategory).toList();
+                              for (final product in filteredResults) {
+                                final sellerId = product['sellerId'];
+                                final sellerName = product['sellerName'] ?? '';
+                                if (sellerId != null && sellerName.isNotEmpty && !sellerSet.contains(sellerId)) {
+                                  sellerSet.add(sellerId);
+                                  // Only show if the seller name matches the search
+                                  if (sellerName.toLowerCase().contains(_searchController.text.toLowerCase())) {
+                                    sellerInfo = {
+                                      'sellerId': sellerId,
+                                      'sellerName': product['sellerName'],
+                                      'sellerAvatar': product['sellerAvatar'],
+                                    };
+                                    break;
+                                  }
                                 }
                               }
-                            }
-                            if (sellerInfo != null) {
-                              return Card(
-                                color: Colors.blue[50],
-                                margin: const EdgeInsets.only(bottom: 15),
-                                elevation: 2,
-                                child: ListTile(
-                                  leading: sellerInfo['sellerAvatar'] != null && sellerInfo['sellerAvatar'].toString().isNotEmpty
-                                      ? CircleAvatar(backgroundImage: NetworkImage(sellerInfo['sellerAvatar']))
-                                      : const CircleAvatar(child: Icon(Icons.person)),
-                                  title: Text(sellerInfo['sellerName'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                                  subtitle: const Text('Seller'),
-                                  onTap: () {
-                                    Navigator.pushNamed(
-                                      context,
-                                      '/seller_store',
-                                      arguments: {'sellerId': sellerInfo!['sellerId']},
-                                    );
-                                  },
-                                ),
-                              );
-                            } else {
-                              return const SizedBox.shrink();
-                            }
-                          }
-                          final filteredResults = _selectedCategory == 'All'
-                              ? _searchResults
-                              : _searchResults.where((item) => item['category'] == _selectedCategory).toList();
-                          final product = filteredResults[index - 1];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 15),
-                            elevation: 2,
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.all(10),
-                              leading: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  product['image'],
-                                  width: 80,
-                                  height: 80,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      width: 80,
-                                      height: 80,
-                                      color: Colors.grey[200],
-                                      child: const Icon(Icons.image_not_supported),
-                                    );
-                                  },
-                                ),
-                              ),
-                              title: Text(
-                                product['name'] ?? 'Unknown Product',
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Price: ₱${product['price']?.toStringAsFixed(2) ?? 'N/A'}',
-                                    style: const TextStyle(
-                                      color: Colors.green,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  if (product['category'] != null)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: product['matchedTerms'].contains('category')
-                                            ? Colors.blue[100]
-                                            : Colors.grey[200],
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        product['category'],
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: product['matchedTerms'].contains('category')
-                                              ? Colors.blue[900]
-                                              : Colors.black87,
-                                        ),
-                                      ),
-                                    ),
-                                  if (product['tags'] != null &&
-                                      (product['tags'] as List).isNotEmpty)
-                                    Wrap(
-                                      spacing: 4,
-                                      children: (product['tags'] as List)
-                                          .map<Widget>((tag) => Container(
-                                                margin: const EdgeInsets.only(top: 4),
-                                                padding: const EdgeInsets.symmetric(
-                                                  horizontal: 6,
-                                                  vertical: 2,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: product['matchedTerms'].contains('tag')
-                                                      ? Colors.green[100]
-                                                      : Colors.grey[200],
-                                                  borderRadius: BorderRadius.circular(12),
-                                                ),
-                                                child: Text(
-                                                  '#$tag',
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: product['matchedTerms'].contains('tag')
-                                                        ? Colors.green[900]
-                                                        : Colors.black87,
-                                                  ),
-                                                ),
-                                              ))
-                                          .toList(),
-                                    ),
-                                  // Seller info
-                                  const SizedBox(height: 8),
-                                  GestureDetector(
+                              if (sellerInfo != null) {
+                                return Card(
+                                  color: Colors.blue[50],
+                                  margin: const EdgeInsets.only(bottom: 15),
+                                  elevation: 2,
+                                  child: ListTile(
+                                    leading: sellerInfo['sellerAvatar'] != null && sellerInfo['sellerAvatar'].toString().isNotEmpty
+                                        ? CircleAvatar(backgroundImage: NetworkImage(sellerInfo['sellerAvatar']))
+                                        : const CircleAvatar(child: Icon(Icons.person)),
+                                    title: Text(sellerInfo['sellerName'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    subtitle: const Text('Seller'),
                                     onTap: () {
                                       Navigator.pushNamed(
                                         context,
                                         '/seller_store',
-                                        arguments: {
-                                          'sellerId': product['sellerId'],
-                                        },
+                                        arguments: {'sellerId': sellerInfo!['sellerId']},
                                       );
                                     },
-                                    child: Row(
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 16,
-                                          backgroundImage: product['sellerAvatar'] != null && product['sellerAvatar'].toString().isNotEmpty
-                                              ? NetworkImage(product['sellerAvatar'])
-                                              : null,
-                                          child: (product['sellerAvatar'] == null || product['sellerAvatar'].toString().isEmpty)
-                                              ? const Icon(Icons.person, size: 18)
-                                              : null,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          product['sellerName'] ?? 'Seller',
-                                          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-                                        ),
-                                        const Icon(Icons.storefront, size: 16, color: Colors.blueGrey),
-                                      ],
-                                    ),
                                   ),
-                                ],
-                              ),
-                              onTap: () {
-                                Navigator.pushNamed(
-                                  context,
-                                  '/product_details',
-                                  arguments: product,
                                 );
-                              },
-                            ),
-                          );
-                        },
+                              } else {
+                                return const SizedBox.shrink();
+                              }
+                            }
+                            final filteredResults = _selectedCategory == 'All'
+                                ? _searchResults
+                                : _searchResults.where((item) => item['category'] == _selectedCategory).toList();
+                            final product = filteredResults[index - 1];
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 15),
+                              elevation: 2,
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.all(10),
+                                leading: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    product['image'],
+                                    width: 80,
+                                    height: 80,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        width: 80,
+                                        height: 80,
+                                        color: Colors.grey[200],
+                                        child: const Icon(Icons.image_not_supported),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                title: Text(
+                                  product['name'] ?? 'Unknown Product',
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Price: ₱${product['price']?.toStringAsFixed(2) ?? 'N/A'}',
+                                      style: const TextStyle(
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    if (product['category'] != null)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: product['matchedTerms'].contains('category')
+                                              ? Colors.blue[100]
+                                              : Colors.grey[200],
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          product['category'],
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: product['matchedTerms'].contains('category')
+                                                ? Colors.blue[900]
+                                                : Colors.black87,
+                                          ),
+                                        ),
+                                      ),
+                                    if (product['tags'] != null &&
+                                        (product['tags'] as List).isNotEmpty)
+                                      Wrap(
+                                        spacing: 4,
+                                        children: (product['tags'] as List)
+                                            .map<Widget>((tag) => Container(
+                                                  margin: const EdgeInsets.only(top: 4),
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: product['matchedTerms'].contains('tag')
+                                                        ? Colors.green[100]
+                                                        : Colors.grey[200],
+                                                    borderRadius: BorderRadius.circular(12),
+                                                  ),
+                                                  child: Text(
+                                                    '#$tag',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: product['matchedTerms'].contains('tag')
+                                                          ? Colors.green[900]
+                                                          : Colors.black87,
+                                                    ),
+                                                  ),
+                                                ))
+                                            .toList(),
+                                      ),
+                                    // Seller info
+                                    const SizedBox(height: 8),
+                                    GestureDetector(
+                                      onTap: () {
+                                        Navigator.pushNamed(
+                                          context,
+                                          '/seller_store',
+                                          arguments: {
+                                            'sellerId': product['sellerId'],
+                                          },
+                                        );
+                                      },
+                                      child: Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 16,
+                                            backgroundImage: product['sellerAvatar'] != null && product['sellerAvatar'].toString().isNotEmpty
+                                                ? NetworkImage(product['sellerAvatar'])
+                                                : null,
+                                            child: (product['sellerAvatar'] == null || product['sellerAvatar'].toString().isEmpty)
+                                                ? const Icon(Icons.person, size: 18)
+                                                : null,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            product['sellerName'] ?? 'Seller',
+                                            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+                                          ),
+                                          const Icon(Icons.storefront, size: 16, color: Colors.blueGrey),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                onTap: () {
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/product_details',
+                                    arguments: product,
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                        ),
                       ),
           ),
         ],

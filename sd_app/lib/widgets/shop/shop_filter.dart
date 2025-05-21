@@ -5,6 +5,9 @@ class ShopFilter extends StatelessWidget {
   final ValueChanged<String> onSortChanged;
   final String selectedCategory;
   final ValueChanged<String> onCategoryChanged;
+  final List<String> sortOptions;
+  final int? selectedRating;
+  final ValueChanged<int?> onRatingChanged;
 
   const ShopFilter({
     super.key,
@@ -12,58 +15,130 @@ class ShopFilter extends StatelessWidget {
     required this.onSortChanged,
     required this.selectedCategory,
     required this.onCategoryChanged,
+    required this.sortOptions,
+    required this.selectedRating,
+    required this.onRatingChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    final sortOptions = [
-      'Featured',
-      'Release date',
-      'Title (A-Z)',
-      'Title (Z-A)',
-      'Price (high to low)',
-      'Price (low to high)',
-    ];
-
-    return Padding(
+    return Container(
       padding: const EdgeInsets.all(16.0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 3,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // First row: Sort by and Rating filter
           Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Sort by:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              // Sort by dropdown
+              Expanded(
+                child: Row(
+                  children: [
+                    const Text(
+                      'Sort by:',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButton<String>(
+                        value: selectedSortOption,
+                        isExpanded: true,
+                        items: sortOptions.map((option) {
+                          return DropdownMenuItem(
+                            value: option,
+                            child: Text(
+                              option,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            onSortChanged(value);
+                          }
+                        },
+                        underline: Container(),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: 8),
-              DropdownButton<String>(
-                value: selectedSortOption,
-                items: sortOptions.map((option) {
-                  return DropdownMenuItem(
-                    value: option,
-                    child: Text(option, style: const TextStyle(fontSize: 16)),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    onSortChanged(value); // Ensure non-null value is passed
-                  }
-                },
-                underline: Container(),
+              const SizedBox(width: 16),
+              // Rating filter
+              Row(
+                children: [
+                  const Text(
+                    'Rating:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  DropdownButton<int?>(
+                    value: selectedRating,
+                    hint: const Text('All'),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('All'),
+                      ),
+                      ...List.generate(
+                        5,
+                        (i) => DropdownMenuItem<int?>(
+                          value: 5 - i,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ...List.generate(
+                                5,
+                                (j) => Icon(
+                                  j < 5 - i ? Icons.star : Icons.star_border,
+                                  color: Colors.amber,
+                                  size: 16,
+                                ),
+                              ),
+                              Text(' ${5 - i}'),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: onRatingChanged,
+                    underline: Container(),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+          // Second row: Category filter button
           ElevatedButton.icon(
             onPressed: () => _showCategoryFilterDialog(context),
             icon: const Icon(Icons.filter_list, size: 18),
-            label: const Text('Filter', style: TextStyle(fontSize: 16)),
+            label: Text(
+              'Category: $selectedCategory',
+              style: const TextStyle(fontSize: 14),
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color.fromARGB(255, 54, 114, 244),
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              minimumSize: const Size(200, 45),
             ),
           ),
         ],
@@ -104,8 +179,10 @@ class ShopFilter extends StatelessWidget {
                 value: category['name'] as String,
                 groupValue: selectedCategory,
                 onChanged: (value) {
-                  onCategoryChanged(value!); // Ensure callback is triggered
-                  Navigator.pop(context);
+                  if (value != null) {
+                    onCategoryChanged(value);
+                    Navigator.pop(context);
+                  }
                 },
               );
             }).toList(),

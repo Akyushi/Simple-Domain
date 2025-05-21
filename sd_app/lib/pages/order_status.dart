@@ -62,8 +62,9 @@ class OrderStatusPage extends StatelessWidget {
               final total = data['total'] ?? 0;
               final paymentMethod = data['paymentMethod'] ?? 'Unknown';
               final timestamp = data['timestamp'] as Timestamp?;
-              final date = timestamp != null ? timestamp.toDate() : null;
+              final date = timestamp?.toDate();
               final orderId = orderDoc.id;
+              final address = data['address'] ?? '';
               for (var item in items) {
                 final itemStatus = item['status'] ?? data['status'] ?? 'Order Placed';
                 // Only add filterComment flag for Order Completed status
@@ -73,6 +74,7 @@ class OrderStatusPage extends StatelessWidget {
                     'date': date,
                     'paymentMethod': paymentMethod,
                     'total': total,
+                    'address': address,
                     'item': item,
                     'filterComment': true,
                   });
@@ -82,6 +84,7 @@ class OrderStatusPage extends StatelessWidget {
                     'date': date,
                     'paymentMethod': paymentMethod,
                     'total': total,
+                    'address': address,
                     'item': item,
                   });
                 }
@@ -115,6 +118,7 @@ class OrderStatusPage extends StatelessWidget {
                           final date = info['date'];
                           final paymentMethod = info['paymentMethod'];
                           final total = info['total'];
+                          final address = info['address'] ?? '';
                           final item = info['item'] as Map<String, dynamic>;
                           final name = item['name'] ?? 'Item';
                           final qty = item['quantity'] ?? 1;
@@ -129,6 +133,7 @@ class OrderStatusPage extends StatelessWidget {
                             date: date,
                             paymentMethod: paymentMethod,
                             total: total,
+                            address: address,
                             item: item,
                             name: name,
                             qty: qty,
@@ -158,6 +163,7 @@ class _OrderItemCard extends StatefulWidget {
   final dynamic date;
   final String paymentMethod;
   final dynamic total;
+  final String address;
   final Map<String, dynamic> item;
   final String name;
   final int qty;
@@ -173,6 +179,7 @@ class _OrderItemCard extends StatefulWidget {
     required this.date,
     required this.paymentMethod,
     required this.total,
+    required this.address,
     required this.item,
     required this.name,
     required this.qty,
@@ -207,6 +214,8 @@ class _OrderItemCardState extends State<_OrderItemCard> {
               ),
             Text('Payment: ${widget.paymentMethod}'),
             Text('Total: ₱${widget.total}'),
+            if (widget.address.isNotEmpty)
+              Text('Address: ${widget.address}', style: const TextStyle(color: Colors.blueGrey)),
             const SizedBox(height: 4),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -217,31 +226,118 @@ class _OrderItemCardState extends State<_OrderItemCard> {
               subtitle: Text('₱${widget.price} x ${widget.qty}'),
               dense: true,
             ),
-            if (widget.status == 'Order Completed' && (widget.item['filterComment'] ?? false))
-              Align(
-                alignment: Alignment.centerRight,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.rate_review),
-                  label: const Text('Rate/Comment'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-                  onPressed: () {
-                    final productId = widget.item['productId'];
-                    if (productId != null && productId is String && productId.isNotEmpty) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => CommentsPage(productId: productId),
-                        ),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Product ID not found for this item.')),
-                      );
-                    }
-                  },
-                ),
+            if (widget.status == 'Order Completed')
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.rate_review),
+                    label: const Text('Rate/Comment'),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                    onPressed: () async {
+                      final productId = widget.item['productId'];
+                      if (productId != null && productId is String && productId.isNotEmpty) {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CommentsPage(productId: productId),
+                          ),
+                        );
+                        // After returning from CommentsPage, update status to 'History'
+                        setState(() => loading = true);
+                        final orderRef = FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(widget.user.uid)
+                            .collection('orders')
+                            .doc(widget.orderId);
+                        final orderSnap = await orderRef.get();
+                        if (orderSnap.exists) {
+                          final orderData = orderSnap.data() as Map<String, dynamic>;
+                          final orderItems = List<Map<String, dynamic>>.from(orderData['items'] ?? []);
+                          for (var i = 0; i < orderItems.length; i++) {
+                            if (orderItems[i]['name'] == widget.name && orderItems[i]['status'] == widget.itemStatus) {
+                              orderItems[i] = {
+                                ...orderItems[i],
+                                'status': 'History',
+                              };
+                            }
+                          }
+                          await orderRef.update({'items': orderItems});
+                        }
+                        // Update the item's status in the global orders collection (for seller page)
+                        final topOrderRef = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
+                        final topOrderSnap = await topOrderRef.get();
+                        if (topOrderSnap.exists) {
+                          final topOrderData = topOrderSnap.data() as Map<String, dynamic>;
+                          final topOrderItems = List<Map<String, dynamic>>.from(topOrderData['items'] ?? []);
+                          for (var i = 0; i < topOrderItems.length; i++) {
+                            if (topOrderItems[i]['name'] == widget.name && topOrderItems[i]['status'] == widget.itemStatus) {
+                              topOrderItems[i] = {
+                                ...topOrderItems[i],
+                                'status': 'History',
+                              };
+                            }
+                          }
+                          await topOrderRef.update({'items': topOrderItems});
+                        }
+                        if (mounted) setState(() => loading = false);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Product ID not found for this item.')),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.cancel, color: Colors.red),
+                    label: const Text('Cancel', style: TextStyle(color: Colors.red)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.red),
+                    ),
+                    onPressed: () async {
+                      // Remove from 'Order Completed' tab but keep in order history
+                      setState(() => loading = true);
+                      final orderRef = FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(widget.user.uid)
+                          .collection('orders')
+                          .doc(widget.orderId);
+                      final orderSnap = await orderRef.get();
+                      if (orderSnap.exists) {
+                        final orderData = orderSnap.data() as Map<String, dynamic>;
+                        final orderItems = List<Map<String, dynamic>>.from(orderData['items'] ?? []);
+                        for (var i = 0; i < orderItems.length; i++) {
+                          if (orderItems[i]['name'] == widget.name && orderItems[i]['status'] == widget.itemStatus) {
+                            orderItems[i] = {
+                              ...orderItems[i],
+                              'status': 'History',
+                            };
+                          }
+                        }
+                        await orderRef.update({'items': orderItems});
+                      }
+                      // Update the item's status in the global orders collection (for seller page)
+                      final topOrderRef = FirebaseFirestore.instance.collection('orders').doc(widget.orderId);
+                      final topOrderSnap = await topOrderRef.get();
+                      if (topOrderSnap.exists) {
+                        final topOrderData = topOrderSnap.data() as Map<String, dynamic>;
+                        final topOrderItems = List<Map<String, dynamic>>.from(topOrderData['items'] ?? []);
+                        for (var i = 0; i < topOrderItems.length; i++) {
+                          if (topOrderItems[i]['name'] == widget.name && topOrderItems[i]['status'] == widget.itemStatus) {
+                            topOrderItems[i] = {
+                              ...topOrderItems[i],
+                              'status': 'History',
+                            };
+                          }
+                        }
+                        await topOrderRef.update({'items': topOrderItems});
+                      }
+                      if (mounted) setState(() => loading = false);
+                    },
+                  ),
+                ],
               ),
-            const SizedBox(height: 8),
             if (widget.status == 'To Receive')
               Align(
                 alignment: Alignment.centerRight,

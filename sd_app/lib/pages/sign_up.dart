@@ -6,6 +6,9 @@ import 'login.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../widgets/sign_up/sign_up_form.dart';
 import '../pages/otp_page.dart';
@@ -28,23 +31,59 @@ class _SignUpPageState extends State<SignUpPage> {
 
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
+  File? _profileImageFile;
+
+  Future<void> _pickProfileImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _profileImageFile = File(pickedFile.path);
+      });
+    }
+  }
+
   Future<void> _handleGoogleSignIn() async {
     try {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
-        // User canceled the sign-in
         return;
       }
 
-      // Use googleUser.email for display or further processing
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      if (googleAuth.accessToken == null || googleAuth.idToken == null) {
+        throw Exception('Google authentication failed');
+      }
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final user = userCredential.user;
+      if (user != null) {
+        // Check if user already exists in Firestore
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        
+        if (!userDoc.exists) {
+          // Only set data if user doesn't exist
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+            'nickname': googleUser.displayName,
+            'avatarUrl': googleUser.photoUrl,
+            'email': googleUser.email,
+          }, SetOptions(merge: true));
+          
+          // Update Auth profile only for new users
+          await user.updateDisplayName(googleUser.displayName);
+          await user.updatePhotoURL(googleUser.photoUrl);
+        }
+      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Signed in as ${googleUser.email}"),
+          content: Text("Signed in as ${userCredential.user?.email}"),
           backgroundColor: Colors.green,
         ),
       );
-
-      // Navigate to the home page or perform additional actions
       Navigator.pushReplacementNamed(context, '/');
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -79,18 +118,43 @@ class _SignUpPageState extends State<SignUpPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const SizedBox(height: 20),
-                SvgPicture.asset(
-                  'assets/icons/logo.svg',
-                  height: 80,
-                  placeholderBuilder: (context) =>
-                      const CircularProgressIndicator(),
-                ),
-                const SizedBox(height: 32),
-                const Text(
-                  'Create Your Account',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SvgPicture.asset(
+                      'assets/icons/logo.svg',
+                      height: 40,
+                      placeholderBuilder: (context) => const CircularProgressIndicator(),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Create Your Account',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 24),
+                GestureDetector(
+                  onTap: _pickProfileImage,
+                  child: CircleAvatar(
+                    radius: 40,
+                    backgroundImage: _profileImageFile != null
+                        ? FileImage(_profileImageFile!)
+                        : const AssetImage('assets/images/user-avatar.png') as ImageProvider,
+                    child: Align(
+                      alignment: Alignment.bottomRight,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(4),
+                        child: const Icon(Icons.camera_alt, size: 20, color: Colors.black),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 SignUpForm(
                   formKey: _formKey,
                   nameController: _nameController,
@@ -188,7 +252,10 @@ class _SignUpPageState extends State<SignUpPage> {
 
       Navigator.of(context).pop(); // Close loading dialog
 
-      // Navigate to OTP verification page, pass email, password, name, and otp
+      // Pass the image file path (if any) or null
+      final imagePath = _profileImageFile?.path;
+
+      // Navigate to OTP verification page, pass email, password, name, otp, and imagePath
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -197,21 +264,17 @@ class _SignUpPageState extends State<SignUpPage> {
             password: password,
             otp: otp,
             name: _nameController.text.trim(),
+            imagePath: imagePath,
           ),
         ),
       );
     } catch (e) {
-      Navigator.of(context).pop(); // Close loading dialog on error
-      String errorMessage = e.toString();
-      if (errorMessage.contains('network-request-failed')) {
-        errorMessage = "Network error: Please check your internet connection.";
-      }
+      Navigator.of(context).pop();
+      print('Sign up failed: \\${e.toString()}');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(errorMessage),
+          content: Text('Sign up failed: $e'),
           backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     } finally {
@@ -242,29 +305,37 @@ Future<bool> sendOtpWithEmailJS({
   required String otp,
 }) async {
   const serviceId = 'service_fqf04zg';
-  const templateId = 'template_94sl2we';
+  const templateId = 'template_dfaj3n9';
   const userId = 'jUAiAXwg8LaI98Ur9';
 
   final url = Uri.parse('https://api.emailjs.com/api/v1.0/email/send');
-  final response = await http.post(
-    url,
-    headers: {
-      'origin': 'http://localhost', // or your app's domain
-      'Content-Type': 'application/json',
-    },
-    body: json.encode({
-      'service_id': serviceId,
-      'template_id': templateId,
-      'user_id': userId,
-      'template_params': {
-        'email': toEmail,
-        'passcode': otp,
-        'time': '15 minutes',
-      }
-    }),
-  );
-
-  return response.statusCode == 200;
+  try {
+    final response = await http.post(
+      url,
+      headers: {
+        'origin': 'http://localhost', // or your app's domain
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        'service_id': serviceId,
+        'template_id': templateId,
+        'user_id': userId,
+        'template_params': {
+          'email': toEmail,
+          'passcode': otp,
+          'time': '15 minutes',
+        }
+      }),
+    );
+    print('EmailJS response: \\${response.statusCode} \\${response.body}');
+    if (response.statusCode != 200) {
+      print('EmailJS error: Status code: \\${response.statusCode}, Body: \\${response.body}');
+    }
+    return response.statusCode == 200;
+  } catch (e) {
+    print('Exception sending OTP with EmailJS: \\${e.toString()}');
+    return false;
+  }
 }
 
 Future<String?> uploadImageToCloudinary(File imageFile) async {

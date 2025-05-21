@@ -1,28 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'order_status.dart';
 
 class CheckoutPage extends StatelessWidget {
   final List<Map<String, dynamic>> cartItems;
-  final String paymentMethod;
 
   const CheckoutPage({
     super.key,
     required this.cartItems,
-    required this.paymentMethod,
   });
 
   @override
   Widget build(BuildContext context) {
-    return _CheckoutPageBody(cartItems: cartItems, paymentMethod: paymentMethod);
+    return _CheckoutPageBody(cartItems: cartItems);
   }
 }
 
 class _CheckoutPageBody extends StatefulWidget {
   final List<Map<String, dynamic>> cartItems;
-  final String paymentMethod;
-  const _CheckoutPageBody({Key? key, required this.cartItems, required this.paymentMethod}) : super(key: key);
+
+  const _CheckoutPageBody({Key? key, required this.cartItems}) : super(key: key);
   @override
   State<_CheckoutPageBody> createState() => _CheckoutPageBodyState();
 }
@@ -33,6 +30,7 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
   final TextEditingController _addressController = TextEditingController();
   bool _addressLoading = true;
   String? _gcashRefNumber;
+  String _selectedPaymentMethod = 'Cash on Delivery';
 
   @override
   void initState() {
@@ -43,11 +41,13 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
   Future<void> _fetchAddress() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      setState(() {
-        _address = null;
-        _addressController.text = '';
-        _addressLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _address = null;
+          _addressController.text = '';
+          _addressLoading = false;
+        });
+      }
       return;
     }
     final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
@@ -55,11 +55,13 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
     final address = data != null && data['address'] != null && data['address'].toString().isNotEmpty
         ? data['address'] as String
         : '';
-    setState(() {
-      _address = address;
-      _addressController.text = address;
-      _addressLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _address = address;
+        _addressController.text = address;
+        _addressLoading = false;
+      });
+    }
   }
 
   Future<Map<String, dynamic>?> _promptAndValidateGCashNumber(BuildContext context) async {
@@ -191,7 +193,35 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
               ],
             ),
             const SizedBox(height: 24),
-            Text('Payment Method: ${widget.paymentMethod}', style: const TextStyle(fontSize: 16)),
+            Row(
+              children: [
+                const Text('Payment Method: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButton<String>(
+                    value: _selectedPaymentMethod,
+                    isExpanded: true,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'Cash on Delivery',
+                        child: Text('Cash on Delivery'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'GCash Online Payment',
+                        child: Text('GCash Online Payment'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          _selectedPaymentMethod = value;
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
             // Address Section
             _addressLoading
@@ -218,17 +248,11 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: loading ? null : () async {
+                onPressed: (loading || _addressController.text.trim().isEmpty) ? null : () async {
                   final user = FirebaseAuth.instance.currentUser;
                   if (user == null) return;
                   final firestore = FirebaseFirestore.instance;
-                  if (_addressController.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter your shipping address.')),
-                    );
-                    return;
-                  }
-                  if (widget.paymentMethod == 'GCash Online Payment') {
+                  if (_selectedPaymentMethod == 'GCash Online Payment') {
                     // Prompt for GCash number and validate
                     final gcashData = await _promptAndValidateGCashNumber(context);
                     if (gcashData == null) return;
@@ -293,12 +317,12 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                         'buyerId': user.uid,
                         'items': orderItems,
                         'total': total,
-                        'paymentMethod': widget.paymentMethod,
+                        'paymentMethod': _selectedPaymentMethod,
                         'status': 'Order Placed',
                         'timestamp': FieldValue.serverTimestamp(),
                         'sellerIds': sellerIds.toList(),
                         'address': _addressController.text.trim(),
-                        if (widget.paymentMethod == 'GCash Online Payment') 'gcashRefNumber': gcashNumber,
+                        if (_selectedPaymentMethod == 'GCash Online Payment') 'gcashRefNumber': gcashNumber,
                       };
                       // 2. Create order in top-level 'orders' collection
                       final orderRef = await firestore.collection('orders').add(orderData);
@@ -401,12 +425,12 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                       'buyerId': user.uid,
                       'items': orderItems,
                       'total': total,
-                      'paymentMethod': widget.paymentMethod,
+                      'paymentMethod': _selectedPaymentMethod,
                       'status': 'Order Placed',
                       'timestamp': FieldValue.serverTimestamp(),
                       'sellerIds': sellerIds.toList(),
                       'address': _addressController.text.trim(),
-                      if (widget.paymentMethod == 'GCash Online Payment') 'gcashRefNumber': _gcashRefNumber,
+                      if (_selectedPaymentMethod == 'GCash Online Payment') 'gcashRefNumber': _gcashRefNumber,
                     };
 
                     // 2. Create order in top-level 'orders' collection
@@ -469,7 +493,7 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Your order has been placed using ${widget.paymentMethod}.'),
+                              Text('Your order has been placed using $_selectedPaymentMethod.'),
                               const SizedBox(height: 8),
                               Text('Product IDs:', style: TextStyle(fontWeight: FontWeight.bold)),
                               ...orderItems.map((item) => Text(item['productId'] ?? 'N/A')).toList(),
@@ -482,22 +506,6 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                                 Navigator.pop(context); // Go back to cart
                               },
                               child: const Text('OK'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context); // Close dialog
-                                Navigator.pop(context); // Go back to cart
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => OrderStatusPage(
-                                      initialTab: 0,
-                                      productIds: orderItems.map((item) => item['productId'] as String).toList(),
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: const Text('View Order Status'),
                             ),
                           ],
                         ),
@@ -622,4 +630,4 @@ class GCashTransactionPage extends StatelessWidget {
       ),
     );
   }
-} 
+}

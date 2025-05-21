@@ -11,9 +11,15 @@ class CartPage extends StatefulWidget {
 }
 
 class _CartPageState extends State<CartPage> {
-  final Set<String> selectedItems = {}; // Track selected cart item IDs for deletion
-  bool showCheckboxes = false; // Control visibility of checkboxes
-  String _selectedPaymentMethod = 'Cash on Delivery'; // Default payment method
+  final Set<String> selectedItems = {};
+  bool showCheckboxes = false;
+  bool _mounted = true;
+
+  @override
+  void dispose() {
+    _mounted = false;
+    super.dispose();
+  }
 
   Stream<List<Map<String, dynamic>>> get cartStream {
     final user = FirebaseAuth.instance.currentUser; // Get the current user
@@ -55,6 +61,27 @@ class _CartPageState extends State<CartPage> {
         });
   }
 
+  void _toggleCheckboxes() {
+    if (!_mounted) return;
+    setState(() {
+      showCheckboxes = !showCheckboxes;
+      if (!showCheckboxes) {
+        selectedItems.clear();
+      }
+    });
+  }
+
+  void _handleCheckboxChange(String itemId, bool? isSelected) {
+    if (!_mounted) return;
+    setState(() {
+      if (isSelected == true) {
+        selectedItems.add(itemId);
+      } else {
+        selectedItems.remove(itemId);
+      }
+    });
+  }
+
   void _removeFromCart(String cartItemId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -66,66 +93,37 @@ class _CartPageState extends State<CartPage> {
         .doc(cartItemId)
         .delete();
 
-    if (mounted) {
+    if (_mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Item removed from cart')),
       );
     }
   }
 
-  void _toggleCheckboxes() {
-    setState(() {
-      showCheckboxes = !showCheckboxes; // Toggle checkbox visibility
-      if (!showCheckboxes) {
-        selectedItems.clear(); // Clear selections when hiding checkboxes
-      }
-    });
-  }
+  void _removeSelectedItems() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
-  void _confirmDeletion() {
-    if (selectedItems.isEmpty) return;
+    final batch = FirebaseFirestore.instance.batch();
+    for (final itemId in selectedItems) {
+      final docRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('cart')
+          .doc(itemId);
+      batch.delete(docRef);
+    }
+    await batch.commit();
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Deletion'),
-        content: const Text('Are you sure you want to remove the selected items from the cart?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context), // Cancel
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final user = FirebaseAuth.instance.currentUser;
-              if (user == null) return;
-
-              final cartRef = FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(user.uid)
-                  .collection('cart');
-
-              for (var cartItemId in selectedItems) {
-                await cartRef.doc(cartItemId).delete(); // Remove from Firestore
-              }
-
-              setState(() {
-                selectedItems.clear();
-                showCheckboxes = false; // Hide checkboxes after deletion
-              });
-
-              Navigator.pop(context); // Close dialog
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Selected items removed from cart')),
-                );
-              }
-            },
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
+    if (_mounted) {
+      setState(() {
+        selectedItems.clear();
+        showCheckboxes = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selected items removed from cart')),
+      );
+    }
   }
 
   @override
@@ -149,6 +147,23 @@ class _CartPageState extends State<CartPage> {
           ),
         ),
         centerTitle: true,
+        actions: [
+          if (showCheckboxes) ...[
+            TextButton(
+              onPressed: selectedItems.isEmpty ? null : _removeSelectedItems,
+              child: Text(
+                'Delete (${selectedItems.length})',
+                style: TextStyle(
+                  color: selectedItems.isEmpty ? Colors.grey : Colors.red,
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: _toggleCheckboxes,
+            ),
+          ],
+        ],
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: cartStream,
@@ -181,94 +196,92 @@ class _CartPageState extends State<CartPage> {
           }
 
           final cartItems = snapshot.data!;
-          return ListView(
-            padding: const EdgeInsets.all(8.0),
-            children: [
-              if (cartItems.isNotEmpty)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      onPressed: showCheckboxes ? _toggleCheckboxes : () => setState(() => showCheckboxes = true),
-                      child: Text(
-                        showCheckboxes ? 'Cancel' : 'Delete',
-                        style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    if (showCheckboxes)
-                      ElevatedButton(
-                        onPressed: _confirmDeletion,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        ),
-                        child: const Text(
-                          'Confirm',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
+          return RefreshIndicator(
+            onRefresh: () async {
+              await Future.delayed(const Duration(milliseconds: 700));
+              setState(() {});
+            },
+            child: ListView(
+              padding: const EdgeInsets.all(8.0),
+              children: [
+                if (cartItems.isNotEmpty)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton(
+                        onPressed: showCheckboxes ? _toggleCheckboxes : () => setState(() => showCheckboxes = true),
+                        child: Text(
+                          showCheckboxes ? 'Cancel' : 'Delete',
+                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
                         ),
                       ),
-                  ],
-                ),
-              const SizedBox(height: 8),
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16.0),
-                itemCount: cartItems.length,
-                itemBuilder: (context, index) {
-                  final cartItem = cartItems[index];
-                  return CartItemTile(
-                    cartItem: cartItem,
-                    showCheckboxes: showCheckboxes,
-                    selectedItems: selectedItems,
-                    onCheckboxChanged: (isSelected) {
-                      setState(() {
-                        if (isSelected == true) {
-                          selectedItems.add(cartItem['id']);
-                        } else {
-                          selectedItems.remove(cartItem['id']);
-                        }
-                      });
-                    },
-                    onRemove: () => _removeFromCart(cartItem['id']),
-                  );
-                },
-                separatorBuilder: (context, index) => const Divider(
-                  thickness: 1,
-                  color: Colors.grey,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _OrderSummary(
-                cartItems: cartItems,
-                selectedPaymentMethod: _selectedPaymentMethod,
-                onPaymentMethodChanged: (String? value) {
-                  if (value != null) {
-                    setState(() {
-                      _selectedPaymentMethod = value;
-                    });
-                  }
-                },
-                onCheckout: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CheckoutPage(
-                        cartItems: cartItems,
-                        paymentMethod: _selectedPaymentMethod,
+                      if (showCheckboxes)
+                        ElevatedButton(
+                          onPressed: _removeSelectedItems,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          ),
+                          child: const Text(
+                            'Confirm',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                const SizedBox(height: 8),
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(16.0),
+                  itemCount: cartItems.length,
+                  itemBuilder: (context, index) {
+                    final cartItem = cartItems[index];
+                    return GestureDetector(
+                      onTap: showCheckboxes ? null : () {
+                        Navigator.pushNamed(
+                          context,
+                          '/product_details',
+                          arguments: cartItem['product'],
+                        );
+                      },
+                      child: CartItemTile(
+                        cartItem: cartItem,
+                        showCheckboxes: showCheckboxes,
+                        selectedItems: selectedItems,
+                        onCheckboxChanged: _handleCheckboxChange,
+                        onRemove: () => _removeFromCart(cartItem['id']),
                       ),
-                    ),
-                  );
-                },
-              ),
-               const SizedBox(height: 100),
-            ],
+                    );
+                  },
+                  separatorBuilder: (context, index) => const Divider(
+                    thickness: 1,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _OrderSummary(
+                  cartItems: cartItems,
+                  onCheckout: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => CheckoutPage(
+                          cartItems: cartItems,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                 const SizedBox(height: 100),
+              ],
+            ),
           );
         },
       ),
@@ -278,13 +291,9 @@ class _CartPageState extends State<CartPage> {
 
 class _OrderSummary extends StatelessWidget {
   final List<Map<String, dynamic>> cartItems;
-  final String selectedPaymentMethod;
-  final Function(String?) onPaymentMethodChanged;
   final Function() onCheckout;
   const _OrderSummary({
     required this.cartItems,
-    required this.selectedPaymentMethod,
-    required this.onPaymentMethodChanged,
     required this.onCheckout,
   });
 
@@ -351,30 +360,6 @@ class _OrderSummary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              const Text('Payment Method: ', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButton<String>(
-                  value: selectedPaymentMethod,
-                  isExpanded: true,
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'Cash on Delivery',
-                      child: Text('Cash on Delivery'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'GCash Online Payment',
-                      child: Text('GCash Online Payment'),
-                    ),
-                  ],
-                  onChanged: onPaymentMethodChanged,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -401,7 +386,7 @@ class CartItemTile extends StatelessWidget {
   final Map<String, dynamic> cartItem;
   final bool showCheckboxes;
   final Set<String> selectedItems;
-  final ValueChanged<bool?> onCheckboxChanged;
+  final Function(String, bool?) onCheckboxChanged;
   final VoidCallback onRemove;
 
   const CartItemTile({
@@ -424,7 +409,7 @@ class CartItemTile extends StatelessWidget {
           if (showCheckboxes)
             Checkbox(
               value: selectedItems.contains(cartItem['id']),
-              onChanged: onCheckboxChanged,
+              onChanged: (value) => onCheckboxChanged(cartItem['id'], value),
             ),
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
@@ -471,57 +456,105 @@ class CartItemTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: onRemove,
-                  child: const Text(
-                    'Remove',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.red,
-                      decoration: TextDecoration.underline,
-                    ),
+                if (!showCheckboxes)
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () async {
+                          // Add to wishlist logic
+                          final user = FirebaseAuth.instance.currentUser;
+                          if (user == null) return;
+                          final product = cartItem['product'];
+                          await FirebaseFirestore.instance
+                              .collection('users')
+                              .doc(user.uid)
+                              .collection('favorites')
+                              .doc(product['id'])
+                              .set(product);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Added to wishlist')),
+                            );
+                          }
+                        },
+                        child: const Icon(Icons.favorite_border, size: 20, color: Colors.red),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Remove Item'),
+                              content: const Text('Are you sure you want to remove this item from the cart?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('Remove'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            onRemove();
+                          }
+                        },
+                        child: const Text(
+                          'Remove',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.red,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
               ],
             ),
           ),
           const SizedBox(width: 16),
-          Column(
-            children: [
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: () {
-                      if (quantity > 1) {
+          if (!showCheckboxes)
+            Column(
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: () {
+                        if (quantity > 1) {
+                          FirebaseFirestore.instance
+                              .collection('users')
+                              .doc(FirebaseAuth.instance.currentUser!.uid)
+                              .collection('cart')
+                              .doc(cartItem['id'])
+                              .update({'quantity': quantity - 1});
+                        }
+                      },
+                      icon: const Icon(Icons.remove, color: Colors.black),
+                    ),
+                    Text(
+                      '$quantity',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      onPressed: () {
                         FirebaseFirestore.instance
                             .collection('users')
                             .doc(FirebaseAuth.instance.currentUser!.uid)
                             .collection('cart')
                             .doc(cartItem['id'])
-                            .update({'quantity': quantity - 1});
-                      }
-                    },
-                    icon: const Icon(Icons.remove, color: Colors.black),
-                  ),
-                  Text(
-                    '$quantity',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    onPressed: () {
-                      FirebaseFirestore.instance
-                          .collection('users')
-                          .doc(FirebaseAuth.instance.currentUser!.uid)
-                          .collection('cart')
-                          .doc(cartItem['id'])
-                          .update({'quantity': quantity + 1});
-                    },
-                    icon: const Icon(Icons.add, color: Colors.black),
-                  ),
-                ],
-              ),
-            ],
-          ),
+                            .update({'quantity': quantity + 1});
+                      },
+                      icon: const Icon(Icons.add, color: Colors.black),
+                    ),
+                  ],
+                ),
+              ],
+            ),
         ],
       ),
     );

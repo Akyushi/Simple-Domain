@@ -51,6 +51,17 @@ class _GCashSimulationPageState extends State<GCashSimulationPage> {
       );
       return;
     }
+    // Check for duplicate number
+    final duplicate = await FirebaseFirestore.instance
+        .collection('users')
+        .where('gcashNumber', isEqualTo: number)
+        .get();
+    if (duplicate.docs.any((doc) => doc.id != user.uid)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This GCash number is already registered to another account.')),
+      );
+      return;
+    }
     await FirebaseFirestore.instance.collection('users').doc(user.uid).set({'gcashBalance': amount, 'gcashNumber': number}, SetOptions(merge: true));
     setState(() {
       _balance = amount;

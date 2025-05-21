@@ -262,7 +262,8 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 30),
                 FeaturedProducts(ads: ads),
                 const SizedBox(height: 30),
-                TrendingProducts(), // Added Trending Products section
+                TrendingProducts(
+                ), // Added Trending Products section
                 const SizedBox(height: 30),
               ],
             ),

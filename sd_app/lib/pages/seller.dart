@@ -25,11 +25,31 @@ class _SellerPageState extends State<SellerPage> {
   bool _isUploadingCover = false;
   final TextEditingController _nameController = TextEditingController();
   String _selectedSortOption = 'Featured';
+  String _orderFilter = 'All';
+  String _sellerName = 'Seller';
 
   @override
   void initState() {
     super.initState();
     _loadSellerProfile();
+    _fetchSellerName();
+  }
+
+  Future<void> _fetchSellerName() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    if (userDoc.exists) {
+      final userData = userDoc.data()!;
+      setState(() {
+        _sellerName = (userData['nickname'] != null && userData['nickname'].toString().isNotEmpty)
+            ? userData['nickname']
+            : 'Seller';
+        if (!_isEditing) {
+          _nameController.text = _sellerName;
+        }
+      });
+    }
   }
 
   Future<void> _loadSellerProfile() async {
@@ -137,28 +157,13 @@ class _SellerPageState extends State<SellerPage> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    // Always use Firestore avatar and nickname for display
-    Widget sellerNameWidget = FutureBuilder<DocumentSnapshot>(
-      future: user != null ? FirebaseFirestore.instance.collection('users').doc(user.uid).get() : null,
-      builder: (context, snapshot) {
-        String sellerName = 'Seller';
-        if (snapshot.hasData && snapshot.data!.exists) {
-          final data = snapshot.data!.data() as Map<String, dynamic>?;
-          if (data != null) {
-            if (data['nickname'] != null && data['nickname'].toString().isNotEmpty) sellerName = data['nickname'];
-          }
-        }
-        if (!_isEditing) {
-          _nameController.text = sellerName;
-        }
-        return Text(
-          sellerName,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 24,
-          ),
-        );
-      },
+    // Use the cached _sellerName instead of a FutureBuilder
+    Widget sellerNameWidget = Text(
+      _sellerName,
+      style: const TextStyle(
+        fontWeight: FontWeight.bold,
+        fontSize: 24,
+      ),
     );
 
     return Scaffold(
@@ -466,187 +471,195 @@ class _SellerPageState extends State<SellerPage> {
             ],
           ),
         ),
-        StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('products')
-              .where('sellerId', isEqualTo: user.uid)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return const Center(child: Text('No products posted yet.'));
-            }
-            var products = snapshot.data!.docs;
-            // Convert to list of maps for sorting
-            var productList = products.map((product) {
-              final data = product.data() as Map<String, dynamic>;
-              return {
-                'id': product.id,
-                'name': data['name'] ?? 'No Name',
-                'image': data['image'] ?? 'assets/images/image.png',
-                'price': data['price'] ?? 0,
-                'category': data['category'] ?? '',
-                'createdAt': data['createdAt'] ?? data['timestamp'], // support both field names
-                'data': data,
-                'doc': product,
-              };
-            }).toList();
-            // Sort
-            switch (_selectedSortOption) {
-              case 'Price (low to high)':
-                productList.sort((a, b) => (a['price'] as num).compareTo(b['price'] as num));
-                break;
-              case 'Price (high to low)':
-                productList.sort((a, b) => (b['price'] as num).compareTo(a['price'] as num));
-                break;
-              case 'Title (A-Z)':
-                productList.sort((a, b) => (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
-                break;
-              case 'Title (Z-A)':
-                productList.sort((a, b) => (b['name'] as String).toLowerCase().compareTo((a['name'] as String).toLowerCase()));
-                break;
-              case 'Release date':
-                productList.sort((a, b) {
-                  final aTime = a['createdAt'];
-                  final bTime = b['createdAt'];
-                  if (aTime == null && bTime == null) return 0;
-                  if (aTime == null) return 1;
-                  if (bTime == null) return -1;
-                  // Firestore Timestamp or DateTime
-                  final aMillis = aTime is Timestamp ? aTime.millisecondsSinceEpoch : (aTime is DateTime ? aTime.millisecondsSinceEpoch : 0);
-                  final bMillis = bTime is Timestamp ? bTime.millisecondsSinceEpoch : (bTime is DateTime ? bTime.millisecondsSinceEpoch : 0);
-                  return bMillis.compareTo(aMillis); // Newest first
-                });
-                break;
-              case 'Featured':
-              default:
-                break;
-            }
-            return ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: productList.length,
-              separatorBuilder: (context, index) => const Divider(),
-              itemBuilder: (context, index) {
-                final product = productList[index];
-                final data = product['data'] as Map<String, dynamic>;
-                final productName = product['name'];
-                final productImage = product['image'];
-                final productPrice = product['price'];
-                final productCategory = product['category'];
-                final doc = product['doc'];
-                return ListTile(
-                  leading: (productImage.toString().startsWith('http'))
-                      ? Image.network(productImage, width: 50, height: 50, fit: BoxFit.cover)
-                      : Image.asset(productImage, width: 50, height: 50, fit: BoxFit.cover),
-                  title: Text(productName),
-                  subtitle: Text('₱$productPrice • $productCategory'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Delete Product'),
-                              content: const Text('Are you sure you want to delete this product? This action cannot be undone.'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, false),
-                                  child: const Text('Cancel'),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () async {
+              await Future.delayed(const Duration(milliseconds: 700));
+              setState(() {});
+            },
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('products')
+                  .where('sellerId', isEqualTo: user.uid)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text('No products posted yet.'));
+                }
+                var products = snapshot.data!.docs;
+                // Convert to list of maps for sorting
+                var productList = products.map((product) {
+                  final data = product.data() as Map<String, dynamic>;
+                  return {
+                    'id': product.id,
+                    'name': data['name'] ?? 'No Name',
+                    'image': data['image'] ?? 'assets/images/image.png',
+                    'price': data['price'] ?? 0,
+                    'category': data['category'] ?? '',
+                    'createdAt': data['createdAt'] ?? data['timestamp'], // support both field names
+                    'data': data,
+                    'doc': product,
+                  };
+                }).toList();
+                // Sort
+                switch (_selectedSortOption) {
+                  case 'Price (low to high)':
+                    productList.sort((a, b) => (a['price'] as num).compareTo(b['price'] as num));
+                    break;
+                  case 'Price (high to low)':
+                    productList.sort((a, b) => (b['price'] as num).compareTo(a['price'] as num));
+                    break;
+                  case 'Title (A-Z)':
+                    productList.sort((a, b) => (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
+                    break;
+                  case 'Title (Z-A)':
+                    productList.sort((a, b) => (b['name'] as String).toLowerCase().compareTo((a['name'] as String).toLowerCase()));
+                    break;
+                  case 'Release date':
+                    productList.sort((a, b) {
+                      final aTime = a['createdAt'];
+                      final bTime = b['createdAt'];
+                      if (aTime == null && bTime == null) return 0;
+                      if (aTime == null) return 1;
+                      if (bTime == null) return -1;
+                      // Firestore Timestamp or DateTime
+                      final aMillis = aTime is Timestamp ? aTime.millisecondsSinceEpoch : (aTime is DateTime ? aTime.millisecondsSinceEpoch : 0);
+                      final bMillis = bTime is Timestamp ? bTime.millisecondsSinceEpoch : (bTime is DateTime ? bTime.millisecondsSinceEpoch : 0);
+                      return bMillis.compareTo(aMillis); // Newest first
+                    });
+                    break;
+                  case 'Featured':
+                  default:
+                    break;
+                }
+                return ListView.separated(
+                  shrinkWrap: true,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  itemCount: productList.length,
+                  separatorBuilder: (context, index) => const Divider(),
+                  itemBuilder: (context, index) {
+                    final product = productList[index];
+                    final data = product['data'] as Map<String, dynamic>;
+                    final productName = product['name'];
+                    final productImage = product['image'];
+                    final productPrice = product['price'];
+                    final productCategory = product['category'];
+                    final doc = product['doc'];
+                    return ListTile(
+                      leading: (productImage.toString().startsWith('http'))
+                          ? Image.network(productImage, width: 50, height: 50, fit: BoxFit.cover)
+                          : Image.asset(productImage, width: 50, height: 50, fit: BoxFit.cover),
+                      title: Text(productName),
+                      subtitle: Text('₱$productPrice • $productCategory'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Delete Product'),
+                                  content: const Text('Are you sure you want to delete this product? This action cannot be undone.'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () => Navigator.pop(context, true),
+                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                      child: const Text('Delete'),
+                                    ),
+                                  ],
                                 ),
-                                ElevatedButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                  child: const Text('Delete'),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (confirm == true) {
-                            final firestore = FirebaseFirestore.instance;
-                            final productId = doc.id;
-                            // 1. Delete product from products collection
-                            await firestore.collection('products').doc(productId).delete();
-                            // 2. Remove product from all users' cart
-                            final usersSnapshot = await firestore.collection('users').get();
-                            for (var userDoc in usersSnapshot.docs) {
-                              final cartRef = userDoc.reference.collection('cart');
-                              final cartItems = await cartRef.where('productId', isEqualTo: productId).get();
-                              for (var cartItem in cartItems.docs) {
-                                await cartItem.reference.delete();
-                              }
-                              // 3. Remove product from all users' favorites (wishlist)
-                              final favRef = userDoc.reference.collection('favorites');
-                              final favItems = await favRef.where(FieldPath.documentId, isEqualTo: productId).get();
-                              for (var favItem in favItems.docs) {
-                                await favItem.reference.delete();
-                              }
-                            }
-                            // 4. Mark product as 'Deleted' in all orders (global and user subcollections)
-                            final ordersSnapshot = await firestore.collection('orders').get();
-                            for (var orderDoc in ordersSnapshot.docs) {
-                              final orderData = orderDoc.data();
-                              final items = List<Map<String, dynamic>>.from(orderData['items'] ?? []);
-                              bool updated = false;
-                              for (var item in items) {
-                                if (item['productId'] == productId) {
-                                  item['status'] = 'Deleted';
-                                  updated = true;
+                              );
+                              if (confirm == true) {
+                                final firestore = FirebaseFirestore.instance;
+                                final productId = doc.id;
+                                // 1. Delete product from products collection
+                                await firestore.collection('products').doc(productId).delete();
+                                // 2. Remove product from all users' cart
+                                final usersSnapshot = await firestore.collection('users').get();
+                                for (var userDoc in usersSnapshot.docs) {
+                                  final cartRef = userDoc.reference.collection('cart');
+                                  final cartItems = await cartRef.where('productId', isEqualTo: productId).get();
+                                  for (var cartItem in cartItems.docs) {
+                                    await cartItem.reference.delete();
+                                  }
+                                  // 3. Remove product from all users' favorites (wishlist)
+                                  final favRef = userDoc.reference.collection('favorites');
+                                  final favItems = await favRef.where(FieldPath.documentId, isEqualTo: productId).get();
+                                  for (var favItem in favItems.docs) {
+                                    await favItem.reference.delete();
+                                  }
                                 }
-                              }
-                              if (updated) {
-                                await orderDoc.reference.update({'items': items});
-                              }
-                              // Also update in user's subcollection
-                              final buyerId = orderData['buyerId'];
-                              if (buyerId != null) {
-                                final userOrderRef = firestore.collection('users').doc(buyerId).collection('orders').doc(orderDoc.id);
-                                final userOrderSnap = await userOrderRef.get();
-                                if (userOrderSnap.exists) {
-                                  final userOrderData = userOrderSnap.data() as Map<String, dynamic>;
-                                  final userItems = List<Map<String, dynamic>>.from(userOrderData['items'] ?? []);
-                                  bool userUpdated = false;
-                                  for (var item in userItems) {
+                                // 4. Mark product as 'Deleted' in all orders (global and user subcollections)
+                                final ordersSnapshot = await firestore.collection('orders').get();
+                                for (var orderDoc in ordersSnapshot.docs) {
+                                  final orderData = orderDoc.data();
+                                  final items = List<Map<String, dynamic>>.from(orderData['items'] ?? []);
+                                  bool updated = false;
+                                  for (var item in items) {
                                     if (item['productId'] == productId) {
                                       item['status'] = 'Deleted';
-                                      userUpdated = true;
+                                      updated = true;
                                     }
                                   }
-                                  if (userUpdated) {
-                                    await userOrderRef.update({'items': userItems});
+                                  if (updated) {
+                                    await orderDoc.reference.update({'items': items});
+                                  }
+                                  // Also update in user's subcollection
+                                  final buyerId = orderData['buyerId'];
+                                  if (buyerId != null) {
+                                    final userOrderRef = firestore.collection('users').doc(buyerId).collection('orders').doc(orderDoc.id);
+                                    final userOrderSnap = await userOrderRef.get();
+                                    if (userOrderSnap.exists) {
+                                      final userOrderData = userOrderSnap.data() as Map<String, dynamic>;
+                                      final userItems = List<Map<String, dynamic>>.from(userOrderData['items'] ?? []);
+                                      bool userUpdated = false;
+                                      for (var item in userItems) {
+                                        if (item['productId'] == productId) {
+                                          item['status'] = 'Deleted';
+                                          userUpdated = true;
+                                        }
+                                      }
+                                      if (userUpdated) {
+                                        await userOrderRef.update({'items': userItems});
+                                      }
+                                    }
                                   }
                                 }
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Product deleted.')));
+                                }
                               }
-                            }
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Product deleted.')));
-                            }
-                          }
-                        },
+                            },
+                          ),
+                          const Icon(Icons.chevron_right),
+                        ],
                       ),
-                      const Icon(Icons.chevron_right),
-                    ],
-                  ),
-                  onTap: () {
-                    Navigator.pushNamed(
-                      context,
-                      '/edit_product',
-                      arguments: {
-                        'edit': true,
-                        'productId': doc.id,
-                        'productData': data,
+                      onTap: () {
+                        Navigator.pushNamed(
+                          context,
+                          '/edit_product',
+                          arguments: {
+                            'edit': true,
+                            'productId': doc.id,
+                            'productData': data,
+                          },
+                        );
                       },
                     );
                   },
                 );
               },
-            );
-          },
+            ),
+          ),
         ),
       ],
     );
@@ -661,7 +674,6 @@ class _SellerPageState extends State<SellerPage> {
       'Order Placed',
       'To Deliver',
       'To Receive',
-      'Order Completed',
     ];
     return DefaultTabController(
       length: statuses.length,
@@ -678,6 +690,25 @@ class _SellerPageState extends State<SellerPage> {
               borderRadius: BorderRadius.circular(10),
             ),
             tabs: statuses.map((s) => Tab(text: s)).toList(),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Row(
+              children: [
+                const Text('Filter:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(width: 8),
+                DropdownButton<String>(
+                  value: _orderFilter,
+                  items: const [
+                    DropdownMenuItem(value: 'All', child: Text('All')),
+                    DropdownMenuItem(value: 'Today', child: Text('Today')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => _orderFilter = val);
+                  },
+                ),
+              ],
+            ),
           ),
           SizedBox(
             height: 400, // Adjust as needed
@@ -700,6 +731,24 @@ class _SellerPageState extends State<SellerPage> {
                       final items = (data['items'] as List<dynamic>? ?? []);
                       for (var item in items) {
                         if (item['sellerId'] == user.uid && item['status'] == status && item['status'] != 'Cancelled') {
+                          // Filter by date if needed
+                          if (_orderFilter == 'Today') {
+                            final timestamp = item['timestamp'] ?? data['timestamp'];
+                            if (timestamp != null) {
+                              DateTime dt;
+                              if (timestamp is Timestamp) {
+                                dt = timestamp.toDate();
+                              } else if (timestamp is DateTime) {
+                                dt = timestamp;
+                              } else {
+                                dt = DateTime.tryParse(timestamp.toString()) ?? DateTime.now();
+                              }
+                              final now = DateTime.now();
+                              if (!(dt.year == now.year && dt.month == now.month && dt.day == now.day)) {
+                                continue;
+                              }
+                            }
+                          }
                           sellerItems.add({
                             'orderId': orderId,
                             'orderData': data,
@@ -757,6 +806,24 @@ class _SellerPageState extends State<SellerPage> {
                               final productId = item['productId'] ?? 'N/A';
                               final image = item['image'];
                               final price = item['price'];
+                              final timestamp = item['timestamp'] ?? entry['orderData']['timestamp'];
+                              String dateText = '';
+                              if (timestamp != null) {
+                                DateTime dt;
+                                if (timestamp is Timestamp) {
+                                  dt = timestamp.toDate();
+                                } else if (timestamp is DateTime) {
+                                  dt = timestamp;
+                                } else {
+                                  dt = DateTime.tryParse(timestamp.toString()) ?? DateTime.now();
+                                }
+                                final now = DateTime.now();
+                                if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+                                  dateText = 'Today';
+                                } else {
+                                  dateText = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+                                }
+                              }
                               // Filter by productIds if provided
                               if (widget.productIds != null && widget.productIds!.isNotEmpty && !widget.productIds!.contains(productId)) {
                                 return const SizedBox.shrink();
@@ -768,6 +835,8 @@ class _SellerPageState extends State<SellerPage> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
+                                      if (dateText.isNotEmpty)
+                                        Text('Date: $dateText', style: const TextStyle(color: Colors.blueGrey, fontSize: 12)),
                                       Text('Product ID: $productId', style: const TextStyle(color: Colors.red, fontSize: 12)),
                                       ListTile(
                                         contentPadding: EdgeInsets.zero,

@@ -37,6 +37,46 @@ class _AdminPageState extends State<AdminPage> {
     );
   }
 
+  Future<void> _deleteUserAccount(String userId) async {
+    // Delete all user's products
+    final productsQuery = await _firestore.collection('products').where('sellerId', isEqualTo: userId).get();
+    for (var doc in productsQuery.docs) {
+      await _firestore.collection('products').doc(doc.id).delete();
+    }
+
+    // Delete user's cart
+    final cartRef = _firestore.collection('users').doc(userId).collection('cart');
+    final cartDocs = await cartRef.get();
+    for (var doc in cartDocs.docs) {
+      await doc.reference.delete();
+    }
+
+    // Delete user's favorites
+    final favoritesRef = _firestore.collection('users').doc(userId).collection('favorites');
+    final favoritesDocs = await favoritesRef.get();
+    for (var doc in favoritesDocs.docs) {
+      await doc.reference.delete();
+    }
+
+    // Delete user's notifications
+    final notificationsRef = _firestore.collection('users').doc(userId).collection('notifications');
+    final notificationsDocs = await notificationsRef.get();
+    for (var doc in notificationsDocs.docs) {
+      await doc.reference.delete();
+    }
+
+    // Delete user's seller profile if exists
+    await _firestore.collection('seller_profile').doc(userId).delete();
+
+    // Finally delete the user document
+    await _firestore.collection('users').doc(userId).delete();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('User account and all associated data deleted!')),
+    );
+  }
+
   Future<void> _deleteAllComments(String productId) async {
     final commentsRef = _firestore.collection('products').doc(productId).collection('comments');
     final snapshot = await commentsRef.get();
@@ -320,9 +360,41 @@ class _AdminPageState extends State<AdminPage> {
                           leading: Icon(isBanned ? Icons.block : Icons.person, color: isBanned ? Colors.red : Colors.blue),
                           title: Text(nickname),
                           subtitle: Text(userId),
-                          trailing: TextButton(
-                            onPressed: () => _banUnbanUser(userId, isBanned),
-                            child: Text(isBanned ? 'Unban' : 'Ban', style: TextStyle(color: isBanned ? Colors.green : Colors.red)),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextButton(
+                                onPressed: () => _banUnbanUser(userId, isBanned),
+                                child: Text(isBanned ? 'Unban' : 'Ban', 
+                                  style: TextStyle(color: isBanned ? Colors.green : Colors.red)
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text('Delete Account'),
+                                      content: Text('Are you sure you want to delete ${nickname}\'s account? This will delete all their data including products, cart, favorites, and notifications.'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(context),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.pop(context);
+                                            _deleteUserAccount(userId);
+                                          },
+                                          child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                                child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                              ),
+                            ],
                           ),
                         );
                       },

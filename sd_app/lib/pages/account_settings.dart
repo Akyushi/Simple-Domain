@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'gcash_simulation_page.dart';
+import 'dart:math';
 
 class AccountSettingsPage extends StatefulWidget {
   const AccountSettingsPage({super.key});
@@ -70,6 +71,203 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _isUploadingAvatar = false);
+    }
+  }
+
+  // Add the EmailJS OTP sending function (copied from sign_up.dart)
+  Future<bool> sendOtpWithEmailJS({
+    required String toEmail,
+    required String otp,
+  }) async {
+    const serviceId = 'service_fqf04zg';
+    const templateId = 'template_dfaj3n9';
+    const userId = 'jUAiAXwg8LaI98Ur9';
+
+    final url = Uri.parse('https://api.emailjs.com/api/v1.0/email/send');
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'origin': 'http://localhost',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'service_id': serviceId,
+          'template_id': templateId,
+          'user_id': userId,
+          'template_params': {
+            'email': toEmail,
+            'passcode': otp,
+            'time': '15 minutes',
+          }
+        }),
+      );
+      if (response.statusCode != 200) {
+        print('EmailJS error: Status code: \\${response.statusCode}, Body: \\${response.body}');
+      }
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Exception sending OTP with EmailJS: \\${e.toString()}');
+      return false;
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    if (user == null) return;
+
+    // First confirmation dialog
+    final confirmDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Account'),
+        content: const Text('Are you sure you want to delete your account? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmDelete != true) return;
+
+    // Generate and send OTP
+    final otp = (Random().nextInt(900000) + 100000).toString();
+    try {
+      // Send OTP via EmailJS (same as sign up)
+      final email = user!.email;
+      if (email == null) throw Exception('No email found for user.');
+      final sent = await sendOtpWithEmailJS(toEmail: email, otp: otp);
+      if (!sent) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to send OTP email. Please try again.')),
+        );
+        return;
+      }
+      // Store OTP in Firestore temporarily
+      await FirebaseFirestore.instance.collection('users').doc(user!.uid).set({
+        'deleteAccountOTP': otp,
+        'deleteAccountOTPExpiry': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // Show OTP input dialog
+      final otpInput = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('Verify OTP'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Please check your email for the OTP code.'),
+              const SizedBox(height: 16),
+              TextField(
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                decoration: const InputDecoration(
+                  hintText: 'Enter OTP',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (value) {
+                  if (value.length == 6) {
+                    Navigator.pop(context, value);
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      );
+
+      if (otpInput != otp) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invalid OTP. Please try again.')),
+        );
+        return;
+      }
+
+      // Delete all user data
+      final batch = FirebaseFirestore.instance.batch();
+
+      // Delete user's products
+      final productsQuery = await FirebaseFirestore.instance
+          .collection('products')
+          .where('sellerId', isEqualTo: user!.uid)
+          .get();
+      for (var doc in productsQuery.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // Delete user's cart
+      final cartQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user!.uid)
+          .collection('cart')
+          .get();
+      for (var doc in cartQuery.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // Delete user's favorites
+      final favoritesQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user!.uid)
+          .collection('favorites')
+          .get();
+      for (var doc in favoritesQuery.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // Delete user's notifications
+      final notificationsQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user!.uid)
+          .collection('notifications')
+          .get();
+      for (var doc in notificationsQuery.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // Delete seller profile if exists
+      batch.delete(FirebaseFirestore.instance.collection('seller_profile').doc(user!.uid));
+
+      // Delete user document
+      batch.delete(FirebaseFirestore.instance.collection('users').doc(user!.uid));
+
+      // Execute batch
+      await batch.commit();
+
+      // Delete Firebase Auth account
+      await user?.delete();
+
+      // Sign out
+      await FirebaseAuth.instance.signOut();
+
+      if (!mounted) return;
+      // Show success message and navigate to home
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Account deleted successfully')),
+      );
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error deleting account: $e')),
+      );
     }
   }
 
@@ -309,6 +507,27 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             },
           ),
           const Divider(),
+          // Add Delete Account button at the bottom
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: ElevatedButton(
+              onPressed: _deleteAccount,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text(
+                'Delete Account',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

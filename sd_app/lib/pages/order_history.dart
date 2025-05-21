@@ -22,7 +22,6 @@ class OrderHistoryPage extends StatelessWidget {
             .collection('users')
             .doc(user.uid)
             .collection('orders')
-            .where('status', isEqualTo: 'Order Completed')
             .orderBy('timestamp', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
@@ -40,7 +39,12 @@ class OrderHistoryPage extends StatelessWidget {
             final timestamp = data['timestamp'] as Timestamp?;
             final date = timestamp != null ? timestamp.toDate() : DateTime.now();
             final dateKey = DateFormat('MMMM dd, yyyy').format(date);
-            grouped.putIfAbsent(dateKey, () => []).add(doc);
+            // Only add orders that have at least one item with status 'Order Completed' or 'History'
+            final items = data['items'] as List<dynamic>? ?? [];
+            final hasCompleted = items.any((item) => item['status'] == 'Order Completed' || item['status'] == 'History');
+            if (hasCompleted) {
+              grouped.putIfAbsent(dateKey, () => []).add(doc);
+            }
           }
           final sortedKeys = grouped.keys.toList()
             ..sort((a, b) => DateFormat('MMMM dd, yyyy').parse(b).compareTo(DateFormat('MMMM dd, yyyy').parse(a)));
@@ -65,6 +69,7 @@ class OrderHistoryPage extends StatelessWidget {
                     final total = data['total'] ?? 0;
                     final paymentMethod = data['paymentMethod'] ?? 'Unknown';
                     final items = data['items'] as List<dynamic>? ?? [];
+                    final filteredItems = items.where((item) => item['status'] == 'Order Completed' || item['status'] == 'History').toList();
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
                       child: Padding(
@@ -76,7 +81,7 @@ class OrderHistoryPage extends StatelessWidget {
                             Text('Payment: $paymentMethod'),
                             Text('Total: ₱$total'),
                             const SizedBox(height: 4),
-                            ...items.map((item) {
+                            ...filteredItems.map((item) {
                               final name = item['name'] ?? 'Item';
                               final qty = item['quantity'] ?? 1;
                               final price = item['price'];

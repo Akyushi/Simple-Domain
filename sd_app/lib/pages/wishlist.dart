@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/auth/login_popup.dart';
 
 class WishlistPage extends StatefulWidget {
   const WishlistPage({super.key});
@@ -12,6 +13,13 @@ class WishlistPage extends StatefulWidget {
 class _WishlistPageState extends State<WishlistPage> {
   final Set<int> selectedItems = {}; // Track selected items for deletion
   bool showCheckboxes = false; // Control visibility of checkboxes
+  bool _mounted = true;
+
+  @override
+  void dispose() {
+    _mounted = false;
+    super.dispose();
+  }
 
   void _toggleCheckboxes() {
     setState(() {
@@ -117,6 +125,39 @@ class _WishlistPageState extends State<WishlistPage> {
           }
           return items;
         });
+  }
+
+  Future<void> _addToCart(Map<String, dynamic> product) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (!_mounted) return;
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (context) => const LoginPopup(),
+      );
+      return;
+    }
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('cart')
+        .doc(product['id'])
+        .set({
+      'productId': product['id'],
+      'quantity': 1,
+      'sellerId': product['sellerId'],
+    });
+
+    if (_mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Added to cart')),
+      );
+    }
   }
 
   @override
@@ -262,84 +303,112 @@ class _WishlistPageState extends State<WishlistPage> {
                 ),
               const SizedBox(height: 8),
               Expanded(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(16.0),
-                  itemCount: wishlistItems.length,
-                  itemBuilder: (context, index) {
-                    final wishlistItem = wishlistItems[index];
-                    return GestureDetector(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (showCheckboxes)
-                            Checkbox(
-                              value: selectedItems.contains(index),
-                              onChanged: (isSelected) {
-                                setState(() {
-                                  if (isSelected == true) {
-                                    selectedItems.add(index);
-                                  } else {
-                                    selectedItems.remove(index);
-                                  }
-                                });
-                              },
-                            ),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: (wishlistItem['image'] != null && wishlistItem['image'].toString().startsWith('http'))
-                                ? Image.network(
-                                    wishlistItem['image'],
-                                    width: 100,
-                                    height: 100,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return const Icon(Icons.broken_image, size: 100, color: Colors.grey);
-                                    },
-                                  )
-                                : Image.asset(
-                                    wishlistItem['image'] ?? 'assets/images/image.png',
-                                    width: 100,
-                                    height: 100,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return const Icon(Icons.broken_image, size: 100, color: Colors.grey);
-                                    },
-                                  ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  wishlistItem['name'],
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  '₱${wishlistItem['price']}',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    await Future.delayed(const Duration(milliseconds: 700));
+                    setState(() {});
                   },
-                  separatorBuilder: (context, index) => const Divider(
-                    thickness: 1,
-                    color: Colors.grey,
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16.0),
+                    itemCount: wishlistItems.length,
+                    itemBuilder: (context, index) {
+                      final wishlistItem = wishlistItems[index];
+                      return GestureDetector(
+                        onTap: showCheckboxes ? null : () {
+                          Navigator.pushNamed(
+                            context,
+                            '/product_details',
+                            arguments: wishlistItem,
+                          );
+                        },
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (showCheckboxes)
+                              Checkbox(
+                                value: selectedItems.contains(index),
+                                onChanged: (isSelected) {
+                                  setState(() {
+                                    if (isSelected == true) {
+                                      selectedItems.add(index);
+                                    } else {
+                                      selectedItems.remove(index);
+                                    }
+                                  });
+                                },
+                              ),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: (wishlistItem['image'] != null && wishlistItem['image'].toString().startsWith('http'))
+                                  ? Image.network(
+                                      wishlistItem['image'],
+                                      width: 100,
+                                      height: 100,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return const Icon(Icons.broken_image, size: 100, color: Colors.grey);
+                                      },
+                                    )
+                                  : Image.asset(
+                                      wishlistItem['image'] ?? 'assets/images/image.png',
+                                      width: 100,
+                                      height: 100,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return const Icon(Icons.broken_image, size: 100, color: Colors.grey);
+                                      },
+                                    ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    wishlistItem['name'],
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '₱${wishlistItem['price']}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  if (!showCheckboxes)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8.0),
+                                      child: ElevatedButton(
+                                        onPressed: () => _addToCart(wishlistItem),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                        ),
+                                        child: const Text('Add to Cart', style: TextStyle(color: Colors.white)),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    separatorBuilder: (context, index) => const Divider(
+                      thickness: 1,
+                      color: Colors.grey,
+                    ),
                   ),
                 ),
               ),

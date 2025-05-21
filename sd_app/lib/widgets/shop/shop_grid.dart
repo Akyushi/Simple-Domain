@@ -5,11 +5,13 @@ import '../../models/category_icon_model.dart'; // Import CategoryIconModel
 class ShopGrid extends StatelessWidget {
   final List<Map<String, dynamic>> products;
   final ValueChanged<String> onFavoriteToggle;
+  final bool showRatings;
 
   const ShopGrid({
     super.key,
     required this.products,
     required this.onFavoriteToggle,
+    this.showRatings = false,
   });
 
   @override
@@ -86,6 +88,29 @@ class ShopGrid extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (showRatings) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        ...List.generate(5, (i) => Icon(
+                          i < (product['avgRating'] as double).round()
+                              ? Icons.star
+                              : Icons.star_border,
+                          color: Colors.amber,
+                          size: 16,
+                        )),
+                        const SizedBox(width: 4),
+                        Text(
+                          (product['avgRating'] as double).toStringAsFixed(1),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                        Text(
+                          ' (${product['numRatings']})',
+                          style: const TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 4),
                   Text(
                     '\u{20B1}${product['price']}', // Properly displayed peso sign

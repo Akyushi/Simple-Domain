@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'sign_up.dart';
 import '../services/auth_service.dart';
 import '../widgets/login/login_form.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -200,9 +201,9 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _handleGoogleSignIn() async {
     try {
-      final isGoogleUserLoggedIn = await _isGoogleUserLoggedIn(); // Check Google login
+      final isGoogleUserLoggedIn = await _isGoogleUserLoggedIn();
       if (!isGoogleUserLoggedIn) {
-        if (!mounted) return; // Check if the widget is still mounted
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Google Sign-In canceled."),
@@ -212,10 +213,8 @@ class _LoginPageState extends State<LoginPage> {
         return;
       }
 
-      // Authenticate with Firebase
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
-        // User canceled the sign-in
         return;
       }
 
@@ -234,8 +233,26 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      final user = userCredential.user;
+      if (user != null) {
+        // Check if user already exists in Firestore
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        
+        if (!userDoc.exists) {
+          // Only set data if user doesn't exist
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+            'nickname': googleUser.displayName,
+            'avatarUrl': googleUser.photoUrl,
+            'email': googleUser.email,
+          }, SetOptions(merge: true));
+          
+          // Update Auth profile only for new users
+          await user.updateDisplayName(googleUser.displayName);
+          await user.updatePhotoURL(googleUser.photoUrl);
+        }
+      }
 
-      if (!mounted) return; // Check if the widget is still mounted
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Signed in as ${userCredential.user?.email}"),
@@ -245,7 +262,7 @@ class _LoginPageState extends State<LoginPage> {
 
       Navigator.pushReplacementNamed(context, '/');
     } catch (e) {
-      if (!mounted) return; // Check if the widget is still mounted
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Google Sign-In failed: $e"),

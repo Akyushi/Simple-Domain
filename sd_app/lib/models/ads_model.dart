@@ -32,7 +32,7 @@ class AdsModel {
         selected: false,
       ),
       AdsModel(
-        name: 'Lapotps',
+        name: 'Laptops',
         imagePath: 'assets/images/Laptop.jpg',
         boxColor: Color(0xffE4E8FC),
         description: 'Powerful Performance',

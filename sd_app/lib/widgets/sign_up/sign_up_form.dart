@@ -65,17 +65,21 @@ class SignUpForm extends StatelessWidget {
               autofillHints: const [AutofillHints.newPassword],
               validator: (value) {
                 final password = value ?? '';
+                List<String> errors = [];
                 if (password.length < 8) {
-                  return 'At least 8 characters';
+                  errors.add('At least 8 characters');
                 }
                 if (!RegExp(r'[A-Z]').hasMatch(password)) {
-                  return 'Include at least one uppercase letter';
+                  errors.add('Include at least one uppercase letter');
                 }
                 if (!RegExp(r'[0-9]').hasMatch(password)) {
-                  return 'Include at least one number';
+                  errors.add('Include at least one number');
                 }
                 if (!RegExp(r'[!@#\$%^&*(),.?":{}|<>\[\]~_\-]').hasMatch(password)) {
-                  return 'Include at least one symbol';
+                  errors.add('Include at least one symbol');
+                }
+                if (errors.isNotEmpty) {
+                  return errors.join('\n');
                 }
                 return null;
               },
