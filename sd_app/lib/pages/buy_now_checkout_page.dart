@@ -2,29 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class CheckoutPage extends StatelessWidget {
+class BuyNowCheckoutPage extends StatelessWidget {
   final List<Map<String, dynamic>> cartItems;
 
-  const CheckoutPage({
+  const BuyNowCheckoutPage({
     super.key,
     required this.cartItems,
   });
 
   @override
   Widget build(BuildContext context) {
-    return _CheckoutPageBody(cartItems: cartItems);
+    return _BuyNowCheckoutPageBody(cartItems: cartItems);
   }
 }
 
-class _CheckoutPageBody extends StatefulWidget {
+class _BuyNowCheckoutPageBody extends StatefulWidget {
   final List<Map<String, dynamic>> cartItems;
 
-  const _CheckoutPageBody({Key? key, required this.cartItems}) : super(key: key);
+  const _BuyNowCheckoutPageBody({Key? key, required this.cartItems}) : super(key: key);
   @override
-  State<_CheckoutPageBody> createState() => _CheckoutPageBodyState();
+  State<_BuyNowCheckoutPageBody> createState() => _BuyNowCheckoutPageBodyState();
 }
 
-class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
+class _BuyNowCheckoutPageBodyState extends State<_BuyNowCheckoutPageBody> {
   bool loading = false;
   String? _address;
   final TextEditingController _addressController = TextEditingController();
@@ -38,17 +38,15 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
   void initState() {
     super.initState();
     // Debug: Print incoming cartItems
-    print('[DEBUG] Incoming cartItems: ${widget.cartItems}');
+    print('[DEBUG][BuyNow] Incoming cartItems: ${widget.cartItems}');
     // Normalize cartItems so every item has a 'product' key and 'quantity'
     normalizedCartItems = widget.cartItems.map((item) {
       if (item.containsKey('product')) {
-        // Already in cart structure
         return {
           'product': item['product'],
           'quantity': item['quantity'] ?? 1,
         };
       } else {
-        // Flat structure from Buy Now
         final newItem = Map<String, dynamic>.from(item);
         final quantity = newItem.remove('quantity') ?? 1;
         return {
@@ -57,8 +55,7 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
         };
       }
     }).toList();
-    // Debug: Print normalized cartItems
-    print('[DEBUG] Normalized cartItems: $normalizedCartItems');
+    print('[DEBUG][BuyNow] Normalized cartItems: $normalizedCartItems');
     _fetchAddress();
   }
 
@@ -113,7 +110,6 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
               onPressed: () async {
                 final number = numberController.text.trim();
                 if (number.isEmpty) return;
-                // Search for user with this GCash number
                 final query = await FirebaseFirestore.instance.collection('users').where('gcashNumber', isEqualTo: number).get();
                 if (query.docs.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -152,8 +148,7 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
     const estimatedTax = 0.0;
     final total = subtotal + shipping + estimatedTax;
 
-    // Debug: Print order summary values
-    print('[DEBUG] Subtotal: $subtotal, Shipping: $shipping, EstimatedTax: $estimatedTax, Total: $total');
+    print('[DEBUG][BuyNow] Subtotal: $subtotal, Shipping: $shipping, EstimatedTax: $estimatedTax, Total: $total');
 
     return Scaffold(
       appBar: AppBar(
@@ -177,8 +172,7 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                 final item = normalizedCartItems[index];
                 final product = item['product'];
                 final quantity = item['quantity'] ?? 1;
-                // Debug: Print each item in the summary
-                print('[DEBUG] Rendering item: $item');
+                print('[DEBUG][BuyNow] Rendering item: $item');
                 return ListTile(
                   leading: (product['image'] != null && product['image'].toString().startsWith('http'))
                       ? Image.network(product['image'], width: 50, height: 50, fit: BoxFit.cover)
@@ -255,7 +249,6 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
               ],
             ),
             const SizedBox(height: 16),
-            // Address Section
             _addressLoading
                 ? const Center(child: CircularProgressIndicator())
                 : Column(
@@ -283,18 +276,16 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                 onPressed: (loading || _addressController.text.trim().isEmpty) ? null : () async {
                   final user = FirebaseAuth.instance.currentUser;
                   if (user == null) {
-                    print('[DEBUG] No user found during checkout');
+                    print('[DEBUG][BuyNow] No user found during checkout');
                     return;
                   }
                   final firestore = FirebaseFirestore.instance;
                   if (_selectedPaymentMethod == 'GCash Online Payment') {
-                    // Prompt for GCash number and validate
                     final gcashData = await _promptAndValidateGCashNumber(context);
                     if (gcashData == null) return;
                     final gcashNumber = gcashData['gcashNumber'];
                     double balance = gcashData['gcashBalance'];
                     final gcashUserId = gcashData['userId'];
-                    // Show transaction page
                     final confirmed = await Navigator.push<bool>(
                       context,
                       MaterialPageRoute(
@@ -308,25 +299,21 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                       ),
                     );
                     if (confirmed != true) return;
-                    // Deduct balance from the correct user
                     await firestore.collection('users').doc(gcashUserId).set({'gcashBalance': balance - total}, SetOptions(merge: true));
-                    // Place order as before, then redirect to home
                     setState(() => loading = true);
                     try {
-                      // Debug: Print GCash checkout start
-                      print('[DEBUG] Starting GCash checkout with items: $normalizedCartItems');
-                      // Validate that every product has a sellerId
+                      print('[DEBUG][BuyNow] Starting GCash checkout with items: $normalizedCartItems');
                       for (var item in normalizedCartItems) {
                         final product = item['product'];
+                        print('[DEBUG][BuyNow] Checking product for sellerId: $product');
                         if (product['sellerId'] == null || product['sellerId'].toString().isEmpty) {
-                          print('[DEBUG] Missing sellerId in product: $product');
+                          print('[DEBUG][BuyNow] Missing sellerId in product: $product');
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('One or more products are missing a seller. Please contact support.')),
                           );
                           return;
                         }
                       }
-                      // 1. Prepare order data
                       final orderItems = normalizedCartItems.map((item) {
                         final product = item['product'];
                         return {
@@ -339,9 +326,7 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                           'status': 'Order Placed',
                         };
                       }).toList();
-                      // Debug: Print orderItems
-                      print('[DEBUG] Prepared orderItems: $orderItems');
-                      // Collect all unique sellerIds for Firestore rules
+                      print('[DEBUG][BuyNow] Prepared orderItems: $orderItems');
                       final sellerIds = <String>{};
                       for (var item in normalizedCartItems) {
                         final product = item['product'];
@@ -349,7 +334,6 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                           sellerIds.add(product['sellerId']);
                         }
                       }
-                      // Save address to user profile if changed
                       if (_addressController.text.trim() != (_address ?? '')) {
                         await firestore.collection('users').doc(user.uid).set({'address': _addressController.text.trim()}, SetOptions(merge: true));
                       }
@@ -364,16 +348,13 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                         'address': _addressController.text.trim(),
                         if (_selectedPaymentMethod == 'GCash Online Payment') 'gcashRefNumber': gcashNumber,
                       };
-                      // 2. Create order in top-level 'orders' collection
                       final orderRef = await firestore.collection('orders').add(orderData);
-                      // 3. Add order ref to buyer's subcollection
                       await firestore
                           .collection('users')
                           .doc(user.uid)
                           .collection('orders')
                           .doc(orderRef.id)
                           .set(orderData);
-                      // 4. Notify the buyer
                       await firestore
                           .collection('users')
                           .doc(user.uid)
@@ -384,7 +365,6 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                         'timestamp': FieldValue.serverTimestamp(),
                         'read': false,
                       });
-                      // 5. Notify each seller (only once per seller)
                       final notifiedSellers = <String>{};
                       for (var item in normalizedCartItems) {
                         final product = item['product'];
@@ -403,18 +383,11 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                           notifiedSellers.add(sellerId);
                         }
                       }
-                      // 6. Clear the cart
-                      final cartRef = firestore.collection('users').doc(user.uid).collection('cart');
-                      final cartSnapshot = await cartRef.get();
-                      for (var doc in cartSnapshot.docs) {
-                        await doc.reference.delete();
-                      }
-                      // 7. Redirect to home
                       if (context.mounted) {
                         Navigator.of(context).popUntil((route) => route.isFirst);
                       }
                     } catch (e) {
-                      print('[DEBUG] Order failed: $e');
+                      print('[DEBUG][BuyNow] Order failed: $e');
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Order failed: $e')),
@@ -427,20 +400,18 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                   }
                   setState(() => loading = true);
                   try {
-                    // Debug: Print Cash on Delivery checkout start
-                    print('[DEBUG] Starting Cash on Delivery checkout with items: $normalizedCartItems');
-                    // Validate that every product has a sellerId
+                    print('[DEBUG][BuyNow] Starting Cash on Delivery checkout with items: $normalizedCartItems');
                     for (var item in normalizedCartItems) {
                       final product = item['product'];
+                      print('[DEBUG][BuyNow] Checking product for sellerId: $product');
                       if (product['sellerId'] == null || product['sellerId'].toString().isEmpty) {
-                        print('[DEBUG] Missing sellerId in product: $product');
+                        print('[DEBUG][BuyNow] Missing sellerId in product: $product');
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('One or more products are missing a seller. Please contact support.')),
                         );
                         return;
                       }
                     }
-                    // 1. Prepare order data
                     final orderItems = normalizedCartItems.map((item) {
                       final product = item['product'];
                       return {
@@ -453,9 +424,7 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                         'status': 'Order Placed',
                       };
                     }).toList();
-                    // Debug: Print orderItems
-                    print('[DEBUG] Prepared orderItems: $orderItems');
-                    // Collect all unique sellerIds for Firestore rules
+                    print('[DEBUG][BuyNow] Prepared orderItems: $orderItems');
                     final sellerIds = <String>{};
                     for (var item in normalizedCartItems) {
                       final product = item['product'];
@@ -463,7 +432,6 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                         sellerIds.add(product['sellerId']);
                       }
                     }
-                    // Save address to user profile if changed
                     if (_addressController.text.trim() != (_address ?? '')) {
                       await firestore.collection('users').doc(user.uid).set({'address': _addressController.text.trim()}, SetOptions(merge: true));
                     }
@@ -478,19 +446,13 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                       'address': _addressController.text.trim(),
                       if (_selectedPaymentMethod == 'GCash Online Payment') 'gcashRefNumber': _gcashRefNumber,
                     };
-
-                    // 2. Create order in top-level 'orders' collection
                     final orderRef = await firestore.collection('orders').add(orderData);
-
-                    // 3. Add order ref to buyer's subcollection
                     await firestore
                         .collection('users')
                         .doc(user.uid)
                         .collection('orders')
                         .doc(orderRef.id)
                         .set(orderData);
-
-                    // 4. Notify the buyer
                     await firestore
                         .collection('users')
                         .doc(user.uid)
@@ -501,8 +463,6 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                       'timestamp': FieldValue.serverTimestamp(),
                       'read': false,
                     });
-
-                    // 5. Notify each seller (only once per seller)
                     final notifiedSellers = <String>{};
                     for (var item in normalizedCartItems) {
                       final product = item['product'];
@@ -521,15 +481,6 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                         notifiedSellers.add(sellerId);
                       }
                     }
-
-                    // 6. Clear the cart
-                    final cartRef = firestore.collection('users').doc(user.uid).collection('cart');
-                    final cartSnapshot = await cartRef.get();
-                    for (var doc in cartSnapshot.docs) {
-                      await doc.reference.delete();
-                    }
-
-                    // 7. Show success dialog
                     if (context.mounted) {
                       showDialog(
                         context: context,
@@ -548,8 +499,8 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                           actions: [
                             TextButton(
                               onPressed: () {
-                                Navigator.pop(context); // Close dialog
-                                Navigator.pop(context); // Go back to cart
+                                Navigator.pop(context);
+                                Navigator.pop(context);
                               },
                               child: const Text('OK'),
                             ),
@@ -558,7 +509,7 @@ class _CheckoutPageBodyState extends State<_CheckoutPageBody> {
                       );
                     }
                   } catch (e) {
-                    print('[DEBUG] Order failed: $e');
+                    print('[DEBUG][BuyNow] Order failed: $e');
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('Order failed: $e')),

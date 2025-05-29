@@ -76,8 +76,22 @@ class MyApp extends StatelessWidget {
         '/admin': (context) => const AdminPage(),
         '/order_status': (context) => const OrderStatusPage(),
         '/seller_store': (context) {
-          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
-          return SellerStorePage(sellerId: args?['sellerId'] ?? '');
+          final args = ModalRoute.of(context)?.settings.arguments;
+          String sellerId = '';
+          // Fix: Always expect a String or Map with sellerId, and handle null/empty
+          if (args is Map<String, dynamic> && args['sellerId'] != null && args['sellerId'].toString().isNotEmpty) {
+            sellerId = args['sellerId'].toString();
+          } else if (args is String && args.isNotEmpty) {
+            sellerId = args;
+          }
+          // If sellerId is still empty, show a fallback page or error
+          if (sellerId.isEmpty) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('Seller Store')),
+              body: const Center(child: Text('Seller not found.')),
+            );
+          }
+          return SellerStorePage(sellerId: sellerId);
         },
         '/admin-login': (context) => const AdminLoginPage(),
       },

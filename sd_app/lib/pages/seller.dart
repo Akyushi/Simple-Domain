@@ -27,6 +27,7 @@ class _SellerPageState extends State<SellerPage> {
   String _selectedSortOption = 'Featured';
   String _orderFilter = 'All';
   String _sellerName = 'Seller';
+  String? _errorMessage; // Add this line
 
   @override
   void initState() {
@@ -38,16 +39,26 @@ class _SellerPageState extends State<SellerPage> {
   Future<void> _fetchSellerName() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-    if (userDoc.exists) {
-      final userData = userDoc.data()!;
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get()
+          .timeout(const Duration(seconds: 10));
+      if (userDoc.exists) {
+        final userData = userDoc.data()!;
+        setState(() {
+          _sellerName = (userData['nickname'] != null && userData['nickname'].toString().isNotEmpty)
+              ? userData['nickname']
+              : 'Seller';
+          if (!_isEditing) {
+            _nameController.text = _sellerName;
+          }
+        });
+      }
+    } catch (e) {
       setState(() {
-        _sellerName = (userData['nickname'] != null && userData['nickname'].toString().isNotEmpty)
-            ? userData['nickname']
-            : 'Seller';
-        if (!_isEditing) {
-          _nameController.text = _sellerName;
-        }
+        _errorMessage = 'Unable to connect to Firestore. Please check your internet connection.';
       });
     }
   }
@@ -55,19 +66,33 @@ class _SellerPageState extends State<SellerPage> {
   Future<void> _loadSellerProfile() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final doc = await FirebaseFirestore.instance.collection('seller_profile').doc(user.uid).get();
-    final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-    if (doc.exists) {
-      final data = doc.data()!;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('seller_profile')
+          .doc(user.uid)
+          .get()
+          .timeout(const Duration(seconds: 10));
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get()
+          .timeout(const Duration(seconds: 10));
+      if (doc.exists) {
+        final data = doc.data()!;
+        setState(() {
+          if (data['coverImageUrl'] != null) _coverImageUrl = data['coverImageUrl'];
+        });
+      }
+      if (userDoc.exists) {
+        final userData = userDoc.data()!;
+        setState(() {
+          if (userData['avatarUrl'] != null) _profileImageUrl = userData['avatarUrl'];
+          if (userData['nickname'] != null) _nameController.text = userData['nickname'];
+        });
+      }
+    } catch (e) {
       setState(() {
-        if (data['coverImageUrl'] != null) _coverImageUrl = data['coverImageUrl'];
-      });
-    }
-    if (userDoc.exists) {
-      final userData = userDoc.data()!;
-      setState(() {
-        if (userData['avatarUrl'] != null) _profileImageUrl = userData['avatarUrl'];
-        if (userData['nickname'] != null) _nameController.text = userData['nickname'];
+        _errorMessage = 'Unable to connect to Firestore. Please check your internet connection.';
       });
     }
   }
@@ -157,6 +182,39 @@ class _SellerPageState extends State<SellerPage> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return const Scaffold(
+        body: Center(child: Text('Please log in to view your seller page.')),
+      );
+    }
+    if (_errorMessage != null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Seller Page'),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.cloud_off, size: 60, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red)),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _errorMessage = null;
+                  });
+                  _loadSellerProfile();
+                  _fetchSellerName();
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     // Use the cached _sellerName instead of a FutureBuilder
     Widget sellerNameWidget = Text(
       _sellerName,
@@ -471,7 +529,8 @@ class _SellerPageState extends State<SellerPage> {
             ],
           ),
         ),
-        Expanded(
+        SizedBox(
+          height: 400, // Set a fixed height or calculate dynamically as needed
           child: RefreshIndicator(
             onRefresh: () async {
               await Future.delayed(const Duration(milliseconds: 700));
@@ -602,7 +661,9 @@ class _SellerPageState extends State<SellerPage> {
                                 final ordersSnapshot = await firestore.collection('orders').get();
                                 for (var orderDoc in ordersSnapshot.docs) {
                                   final orderData = orderDoc.data();
-                                  final items = List<Map<String, dynamic>>.from(orderData['items'] ?? []);
+                                  final items = (orderData['items'] as List<dynamic>? ?? [])
+                                      .map((e) => Map<String, dynamic>.from(e as Map))
+                                      .toList();
                                   bool updated = false;
                                   for (var item in items) {
                                     if (item['productId'] == productId) {
@@ -620,7 +681,9 @@ class _SellerPageState extends State<SellerPage> {
                                     final userOrderSnap = await userOrderRef.get();
                                     if (userOrderSnap.exists) {
                                       final userOrderData = userOrderSnap.data() as Map<String, dynamic>;
-                                      final userItems = List<Map<String, dynamic>>.from(userOrderData['items'] ?? []);
+                                      final userItems = (userOrderData['items'] as List<dynamic>? ?? [])
+                                          .map((e) => Map<String, dynamic>.from(e as Map))
+                                          .toList();
                                       bool userUpdated = false;
                                       for (var item in userItems) {
                                         if (item['productId'] == productId) {

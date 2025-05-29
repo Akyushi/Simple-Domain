@@ -5,7 +5,7 @@ import '../widgets/product_details/product_image.dart';
 import '../widgets/product_details/product_name.dart';
 import '../widgets/product_details/product_category.dart';
 import '../widgets/auth/login_popup.dart'; // Import the reusable LoginPopup widget
-import '../pages/checkout_page.dart'; // Add this import
+import '../pages/buy_now_checkout_page.dart'; // <-- Add this import
 
 class ProductDetailsPage extends StatefulWidget {
   final Map<String, dynamic> product;
@@ -194,14 +194,9 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
                                             ),
                                         ],
                                       ),
-                                      Row(
-                                        children: [
-                                          ...List.generate(5, (i) => Icon(
-                                            i < (data['rating'] ?? 0) ? Icons.star : Icons.star_border,
-                                            color: Colors.amber,
-                                            size: 16,
-                                          )),
-                                        ],
+                                      const Text(
+                                        'Via App',
+                                        style: TextStyle(color: Colors.grey, fontSize: 12),
                                       ),
                                     ],
                                   ),
@@ -328,48 +323,10 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            GestureDetector(
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => Dialog(
-                    backgroundColor: Colors.transparent,
-                    child: InteractiveViewer(
-                      child: ProductImage(image: product['image']),
-                    ),
-                  ),
-                );
-              },
-              child: ProductImage(image: product['image']),
-            ),
+            ProductImage(image: product['image']),
             _buildAverageRating(product['id'] is String && product['id'] != null ? product['id'] : ''),
             const SizedBox(height: 16),
             ProductName(name: product['name']),
-            FutureBuilder<DocumentSnapshot>(
-              future: FirebaseFirestore.instance.collection('users').doc(product['sellerId']).get(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData || !snapshot.data!.exists) {
-                  return const SizedBox.shrink();
-                }
-                final seller = snapshot.data!.data() as Map<String, dynamic>?;
-                final avatarUrl = seller?['avatarUrl'] ?? '';
-                final nickname = seller?['nickname'] ?? 'Seller';
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 8),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-                        child: avatarUrl.isEmpty ? const Icon(Icons.person) : null,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(nickname, style: const TextStyle(fontWeight: FontWeight.w500)),
-                    ],
-                  ),
-                );
-              },
-            ),
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
@@ -483,18 +440,44 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
                         child: SizedBox(
                           height: 48,
                           child: ElevatedButton(
-                            onPressed: () {
-                              // Navigate to checkout page with this product and quantity
+                            onPressed: () async {
+                              // Ensure sellerId and sellerName are present and up-to-date
+                              var cartItem = {
+                                ...product,
+                                'quantity': quantity,
+                              };
+                              // If sellerId or sellerName is missing, fetch from Firestore
+                              if ((cartItem['sellerId'] == null || cartItem['sellerName'] == null) && cartItem['id'] != null) {
+                                final doc = await FirebaseFirestore.instance
+                                    .collection('products')
+                                    .doc(cartItem['id'])
+                                    .get();
+                                final data = doc.data();
+                                if (data != null) {
+                                  if (cartItem['sellerId'] == null && data['sellerId'] != null) {
+                                    cartItem['sellerId'] = data['sellerId'];
+                                  }
+                                  // Fetch seller name if missing and sellerId is not null
+                                  if (cartItem['sellerName'] == null && data['sellerId'] != null) {
+                                    final sellerId = data['sellerId'];
+                                    if (sellerId != null) {
+                                      final sellerDoc = await FirebaseFirestore.instance
+                                          .collection('users')
+                                          .doc(sellerId)
+                                          .get();
+                                      final sellerData = sellerDoc.data();
+                                      if (sellerData != null && sellerData['name'] != null) {
+                                        cartItem['sellerName'] = sellerData['name'];
+                                      }
+                                    }
+                                  }
+                                }
+                              }
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => CheckoutPage(
-                                    cartItems: [
-                                      {
-                                        'product': product,
-                                        'quantity': quantity,
-                                      }
-                                    ],
+                                  builder: (context) => BuyNowCheckoutPage(
+                                    cartItems: [cartItem],
                                   ),
                                 ),
                               );
